@@ -18,16 +18,25 @@ Click any part of the controller to change it.
 - **Buttons and paddles:** click Assign and press the button it should act as. Works for every button, including M1–M4, LM and RM. Turbo
   that fires while held or toggles on and off, at 1–30 presses a second.
 - **Macros:** record a sequence by pressing buttons on the controller, or build it tap by tap.
-  Choose whether it plays once, repeats while held, or toggles. Up to 5 per profile.
-- **Sticks:** dead zone, full-output point, response curve, precision (8–12 bit) and sensitivity.
+  Choose whether it plays once, repeats while held, or toggles, and the pause between repeats.
+  Up to 5 per profile.
+- **Sticks:** a response curve you drag into shape (dead zone, anti-dead zone, bends, full-output
+  point), the Default/Instant/Delay presets, circle or square, precision (8–12 bit) and
+  sensitivity. A circularity test shows how far the stick reaches in every direction.
+- **Keyboard and mouse:** set buttons to keys, clicks or scrolling, sticks to WASD, arrows or the
+  pointer, and gyro to the pointer. Like on Windows, the app does this while it runs.
 - **Triggers:** start and end points, and the force-feedback modes: racing, recoil, sniper, lock
   and vibration.
 - **Vibration, gyro and lighting:** motor strength, gyro as a stick or mouse with an activation
-  button, and light-bar colours, effects and brightness.
-- **Profiles:** all four on-board profiles, with switching, renaming and reset.
+  button, and light-bar colours, effects, brightness and the vibration light effect.
+- **Screen:** put your own picture or GIF on the controller's display (up to 150 frames).
+- **Profiles:** all four on-board profiles, with switching, renaming, reset, and export/import
+  as files.
 - **Controller settings:** polling rate (up to 1000 Hz), sleep timer, Fast Swap, Home as the Xbox
   button, and the screen.
-- **Live view:** see every button, stick, trigger and the real polling rate as you press.
+- **Live view:** see every button, stick, trigger and the real polling rate as you press, over
+  the cable, Flydigi's 2.4 GHz receiver or PC Bluetooth. Settings need the cable or receiver:
+  in Bluetooth mode the controller is a plain Xbox pad with no settings channel.
 - **Backups:** every profile is saved to your Mac before anything on the controller changes.
 
 ## Playing games on a Mac
@@ -51,8 +60,8 @@ switch the controller to **Switch → Wired** mode. macOS sees it as a Pro Contr
    ```
 3. Plug in the Apex 5 with a USB-C cable and set it to **PC → Wired** on the controller.
 
-Needs macOS 15 or later, on Apple Silicon or Intel. The app needs no permissions, drivers or
-system extensions.
+Needs macOS 15 or later, on Apple Silicon or Intel. No drivers or system extensions. Keyboard and
+mouse mapping asks for Accessibility permission; nothing else needs any.
 
 ## Build it yourself
 
@@ -65,7 +74,12 @@ bun run build         # build/Apex Station.app
 bun run install-app   # build and copy to /Applications
 bun run release       # universal build, zipped for download
 bun scripts/icon.ts   # re-render the app icon
+bun scripts/screen-default.ts ss4_setup.exe   # copy Flydigi's screen animation out of Space Station
 ```
+
+The screen's stock animation is Flydigi's artwork, so it isn't included. Run the last command
+with Space Station's Windows installer (needs `brew install innoextract`) and the app offers
+**Restore Flydigi animation**.
 
 `Sources/ApexKit` holds the controller protocol: profile, lighting, macro and settings formats.
 It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` is the app.
@@ -73,8 +87,8 @@ It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` 
 
 ## Safety
 
-The app only uses the commands Space Station uses for settings, profiles and lighting. It never
-touches firmware. Each change writes only the bytes that differ, reads the profile back so the app shows what the controller stored, and
+The app only uses the commands Space Station uses for settings, profiles, lighting and the
+screen. It never touches firmware. Each change writes only the bytes that differ, reads the profile back so the app shows what the controller stored, and
 keeps a backup in `~/Library/Application Support/Apex Station/Backups`.
 
 Not affiliated with Flydigi.
