@@ -645,7 +645,9 @@ private struct GyroPanel: View {
                             save(g) { $0.activation = a }
                         }
                     }
-                    ValueSlider(title: "Dead zone", range: 0...50, value: g.deadZone) { v in save(g) { $0.deadZone = v } }
+                    ValueSlider(title: "Stick dead zone offset", range: 0...50, value: g.deadZone) { v in save(g) { $0.deadZone = v } }
+                    Text("Starts the stick past the game's own dead zone, so small tilts register.")
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.label)
                 }
                 ValueSlider(title: "Sensitivity", range: 1...100, value: g.sensitivity) { v in save(g) { $0.sensitivity = v } }
                 SettingRow(title: "Racing tilt", detail: "Steer by tilting instead of aiming.") {

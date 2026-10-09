@@ -209,6 +209,8 @@ public struct GyroConfig: Sendable, Equatable {
     /// The button that turns gyro on; nil = always on.
     public var key: FlydigiKey?
     public var activation: Activation
+    /// Stick dead-zone offset, 0-100: output starts this far out so the game's own dead zone
+    /// doesn't swallow small tilts (Space Station's "joystick dead zone offset").
     public var deadZone: Int
     /// 1-100.
     public var sensitivity: Int

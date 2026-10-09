@@ -66,6 +66,7 @@ struct SettingsSheet: View {
                     }
                     toggle(s, .quickProfileSwitch, "Fast Swap Config", "Fn + A, B, X or Y switches between the four profiles.")
                     toggle(s, .xboxHomeButton, "Home acts as Xbox button", "Sends the Xbox Guide button when you press Home.")
+                    toggle(s, .audio, "Audio", "The headphone jack on the controller.")
                 }
                 Button { Task { await service.testRumble() } } label: {
                     Label("Test rumble", systemImage: "waveform").frame(maxWidth: .infinity).padding(.vertical, 8)
