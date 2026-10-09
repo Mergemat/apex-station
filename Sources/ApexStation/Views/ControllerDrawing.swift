@@ -59,6 +59,7 @@ struct ControllerDrawing: View {
         stick(&ctx, L.leftStick, live ? state.leftStick : .init(), "L3", b.contains(.leftStick))
         stick(&ctx, L.rightStick, live ? state.rightStick : .init(), "R3", b.contains(.rightStick))
         dpad(&ctx, L.dpad)
+        for c in L.dials { dial(&ctx, c) }
         key(&ctx, .circle(L.a, L.faceRadius), "A", b.contains(.a))
         key(&ctx, .circle(L.b, L.faceRadius), "B", b.contains(.b))
         key(&ctx, .circle(L.x, L.faceRadius), "X", b.contains(.x))
@@ -316,24 +317,38 @@ struct ControllerDrawing: View {
     }
 
     /// Four separate arrow keys, so each direction reads on its own.
+    /// The d-pad as on the controller: a cross on a rounded diamond plate with a double rim.
+    /// Each arm lights up on its own.
     private func dpad(_ ctx: inout GraphicsContext, _ c: CGPoint) {
-        // Each arrow is a chevron pointing along (dx, dy), drawn as a path so it sits exactly in
-        // the middle of its key (a symbol glyph carries side spacing that pushes it off centre).
-        let keys: [(FlydigiKey, GamepadButtons, CGFloat, CGFloat)] = [
-            (.up, .dpadUp, 0, -1), (.down, .dpadDown, 0, 1), (.left, .dpadLeft, -1, 0), (.right, .dpadRight, 1, 0),
-        ]
-        for (key, button, dx, dy) in keys {
-            let r = L.dpadRect(key)
-            let on = b.contains(button)
-            fill(&ctx, path(.rounded(r, 8)), on: on)
-            let c = CGPoint(x: r.midX, y: r.midY), half: CGFloat = 4.2, depth: CGFloat = 2.2
-            var chevron = Path()
-            chevron.move(to: CGPoint(x: c.x - dx * depth - dy * half, y: c.y - dy * depth - dx * half))
-            chevron.addLine(to: CGPoint(x: c.x + dx * depth, y: c.y + dy * depth))
-            chevron.addLine(to: CGPoint(x: c.x - dx * depth + dy * half, y: c.y - dy * depth + dx * half))
-            ctx.stroke(chevron, with: .color(on ? .white : .white.opacity(0.65)),
-                       style: .init(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        ctx.fill(L.dpadPlate(inset: 0), with: .color(.white.opacity(0.05)))
+        ctx.stroke(L.dpadPlate(inset: 0), with: .color(.white.opacity(0.24)), lineWidth: 1.6)
+        ctx.stroke(L.dpadPlate(inset: 4), with: .color(.white.opacity(0.12)), lineWidth: 0.8)
+        let arms: [(FlydigiKey, GamepadButtons)] = [(.up, .dpadUp), (.down, .dpadDown), (.left, .dpadLeft), (.right, .dpadRight)]
+        ctx.fill(L.dpadCross, with: .color(.white.opacity(0.08)))
+        for (key, button) in arms where b.contains(button) {
+            fill(&ctx, L.dpadArm(key), on: true)
         }
+        ctx.stroke(L.dpadCross, with: .color(.white.opacity(0.2)), lineWidth: 0.8)
+    }
+
+    /// One of the adjustment screws beside the sticks: a slotted screw with a − to + gauge.
+    private func dial(_ ctx: inout GraphicsContext, _ c: CGPoint) {
+        let color = GraphicsContext.Shading.color(.white.opacity(0.32))
+        ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 5.5, y: c.y - 5.5, width: 11, height: 11)), with: color, lineWidth: 0.9)
+        var slot = Path()
+        slot.move(to: CGPoint(x: c.x, y: c.y - 3.2)); slot.addLine(to: CGPoint(x: c.x, y: c.y + 3.2))
+        ctx.stroke(slot, with: color, style: .init(lineWidth: 1.4, lineCap: .round))
+        // Gauge from − (left) over the top to + (right), in segments.
+        for (from, to) in [(196.0, 222.0), (228.0, 266.0), (272.0, 344.0)] {
+            var arc = Path()
+            arc.addArc(center: c, radius: 9.5, startAngle: .degrees(from), endAngle: .degrees(to), clockwise: false)
+            ctx.stroke(arc, with: color, style: .init(lineWidth: 2.4))
+        }
+        var signs = Path()
+        signs.move(to: CGPoint(x: c.x - 13, y: c.y + 4)); signs.addLine(to: CGPoint(x: c.x - 9, y: c.y + 4))
+        signs.move(to: CGPoint(x: c.x + 9, y: c.y + 4)); signs.addLine(to: CGPoint(x: c.x + 13, y: c.y + 4))
+        signs.move(to: CGPoint(x: c.x + 11, y: c.y + 2)); signs.addLine(to: CGPoint(x: c.x + 11, y: c.y + 6))
+        ctx.stroke(signs, with: color, style: .init(lineWidth: 1, lineCap: .round))
     }
 
     private func home(_ ctx: inout GraphicsContext, _ c: CGPoint, on: Bool) {
@@ -438,7 +453,9 @@ enum ControllerLayout {
     static let rightStick = at(0.6727, 0.3701)
     static let stickRadius: CGFloat = 37
     static let dpad = at(0.3582, 0.3701)
-    static let dpadKey: CGFloat = 28, dpadGap: CGFloat = 16
+    static let dpadPlateSide: CGFloat = 66, dpadArmWidth: CGFloat = 24
+    /// The adjustment screws to the right of each stick.
+    static let dials = [at(0.337, 0.206), at(0.786, 0.364)]
     static let a = at(0.7925, 0.2908), b = at(0.8588, 0.2246), x = at(0.7258, 0.2246), y = at(0.7925, 0.1591)
     static let faceRadius: CGFloat = 15.5
     static let view = at(0.365, 0.090), menu = at(0.635, 0.090), home = at(0.5, 0.0764)
@@ -465,16 +482,32 @@ enum ControllerLayout {
         return bar
     }()
 
-    static func dpadRect(_ k: FlydigiKey) -> CGRect {
-        let off = dpadGap + dpadKey / 2
-        let c: CGPoint = switch k {
-        case .up: CGPoint(x: dpad.x, y: dpad.y - off)
-        case .down: CGPoint(x: dpad.x, y: dpad.y + off)
-        case .left: CGPoint(x: dpad.x - off, y: dpad.y)
-        default: CGPoint(x: dpad.x + off, y: dpad.y)
-        }
-        return CGRect(x: c.x - dpadKey / 2, y: c.y - dpadKey / 2, width: dpadKey, height: dpadKey)
+    /// The d-pad plate: a rounded square turned 45°, `inset` points smaller for the inner rim.
+    static func dpadPlate(inset: CGFloat) -> Path {
+        let side = dpadPlateSide - inset * 2
+        return Path(roundedRect: CGRect(x: -side / 2, y: -side / 2, width: side, height: side), cornerRadius: max(4, 15 - inset))
+            .applying(CGAffineTransform(rotationAngle: .pi / 4).concatenating(.init(translationX: dpad.x, y: dpad.y)))
     }
+
+    /// One arm of the cross, reaching to the plate's inner rim.
+    static func dpadArm(_ k: FlydigiKey) -> Path {
+        let w = dpadArmWidth, reach = dpadPlateSide * 0.71
+        let r: CGRect = switch k {
+        case .up: CGRect(x: dpad.x - w / 2, y: dpad.y - reach, width: w, height: reach - w / 2)
+        case .down: CGRect(x: dpad.x - w / 2, y: dpad.y + w / 2, width: w, height: reach - w / 2)
+        case .left: CGRect(x: dpad.x - reach, y: dpad.y - w / 2, width: reach - w / 2, height: w)
+        default: CGRect(x: dpad.x + w / 2, y: dpad.y - w / 2, width: reach - w / 2, height: w)
+        }
+        return Path(Path(r).cgPath.intersection(dpadPlate(inset: 4).cgPath))
+    }
+
+    /// The whole cross: the four arms and the middle.
+    static let dpadCross: Path = {
+        let w = dpadArmWidth
+        var cross = Path(CGRect(x: dpad.x - w / 2, y: dpad.y - w / 2, width: w, height: w)).cgPath
+        for k in [FlydigiKey.up, .down, .left, .right] { cross = cross.union(dpadArm(k).cgPath) }
+        return Path(cross)
+    }()
 
     private static func circle(_ c: CGPoint, _ r: CGFloat) -> Path {
         Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
@@ -499,7 +532,7 @@ enum ControllerLayout {
             .key(.turbo): Path(roundedRect: turbo, cornerRadius: 11), .key(.fn): Path(roundedRect: fn, cornerRadius: 11),
             .key(.lb): ControllerDrawing.bumperRegion(left: true), .key(.rb): ControllerDrawing.bumperRegion(left: false),
         ]
-        for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = Path(roundedRect: dpadRect(k), cornerRadius: 8) }
+        for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = dpadArm(k) }
         r[.lighting] = lightBar.strokedPath(.init(lineWidth: 14, lineCap: .round))
         r[.screen] = Path(roundedRect: screen, cornerRadius: 4)
         return r

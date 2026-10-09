@@ -54,9 +54,7 @@ struct AppIconView: View {
                 ctx.fill(circle(c, L.stickRadius * 0.62), with: .color(.white.opacity(0.22)))
             }
             for c in [L.a, L.b, L.x, L.y] { ctx.fill(circle(c, L.faceRadius), with: .color(.white.opacity(0.28))) }
-            for key in [FlydigiKey.up, .down, .left, .right] {
-                ctx.fill(Path(roundedRect: L.dpadRect(key), cornerRadius: 6).applying(t), with: .color(.white.opacity(0.28)))
-            }
+            ctx.fill(L.dpadCross.applying(t), with: .color(.white.opacity(0.28)))
 
             // A thin rim light on the tile edge.
             ctx.stroke(tile, with: .linearGradient(Gradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.04)]),
