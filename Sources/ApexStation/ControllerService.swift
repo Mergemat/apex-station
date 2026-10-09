@@ -77,11 +77,13 @@ final class ControllerService {
         Task { await watchPad() }
         Task { await watchXInput() }
         Task { await refreshUI() }
+        Task { await watchScreenChip() }
     }
 
     /// What to tell the user when something can't be changed right now.
     func cableNote(_ what: String) -> String {
-        bluetooth
+        if screenChipWaiting { return "The controller is waiting for a screen upload to finish. Upload to the screen again to bring it back." }
+        return bluetooth
             ? "Over Bluetooth the controller can't be changed. Connect it with the USB-C cable to change \(what); it keeps your changes when you go back to Bluetooth."
             : "Connect your Apex 5 with the USB-C cable to change \(what)."
     }
@@ -437,43 +439,85 @@ final class ControllerService {
     /// Progress of the last screen upload.
     private(set) var screenUpload: ScreenUpload?
 
+    /// The controller is offline on purpose while its screen chip takes an upload.
+    var updatingScreen: Bool {
+        if case .sending = screenUpload { true } else { false }
+    }
+
+    /// The controller is still on its screen chip's port after an upload that didn't finish, and
+    /// comes back once one does.
+    private(set) var screenChipWaiting = false
+
+    private func watchScreenChip() async {
+        while !Task.isCancelled {
+            let waiting = !connected && !updatingScreen && ScreenChipPort.find() != nil
+            if waiting != screenChipWaiting { screenChipWaiting = waiting }
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
+    private static let lastDeviceIDKey = "lastDeviceID"
+
     /// Flydigi's own animation for this controller, if it has been copied out of Space Station's
     /// installer (scripts/screen-default.ts). It's their artwork, so the app doesn't ship it.
     var defaultScreenFile: URL? {
-        guard let id = info?.deviceID else { return nil }
+        // While the screen chip waits there's no controller to ask, so the last one seen.
+        guard let id = info.map({ Int($0.deviceID) }) ?? UserDefaults.standard.object(forKey: Self.lastDeviceIDKey) as? Int else { return nil }
         let url = ProfileBackup.folder.deletingLastPathComponent()
             .appendingPathComponent("Screen/default_screen_image_\(id).bin")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// Sends an animation (encoded frames) to the controller's screen, through the 2.4 GHz
-    /// receiver (see `Screen`). It shows after the controller restarts.
-    func uploadScreen(_ frames: [[UInt8]]) async {
-        guard connected, !frames.isEmpty, !saving else { return }
-        let packets = Screen.uploadPackets(frames: Array(frames.prefix(Screen.maxFrames)))
+    /// Whether a screen upload can start: it needs the cable (the controller switches to its
+    /// screen chip's USB port), or the chip already waiting after an upload that stopped.
+    var canUploadScreen: Bool {
+        (connected && info?.connection != .wireless) || screenChipWaiting
+    }
+
+    /// Sends an animation (encoded frames) to the controller's screen, as Space Station does
+    /// (see `Screen`): the controller drops off USB while its screen chip takes the frames, then
+    /// restarts with them. `frameTime` is per frame in 10 ms steps.
+    func uploadScreen(_ frames: [[UInt8]], frameTime: Int, restoreDefault: Bool = false) async {
+        let frames = Array(frames.prefix(Screen.maxFrames))
+        guard !frames.isEmpty, !saving, canUploadScreen else { return }
         saving = true
         uploadingScreen = true
         defer { saving = false; uploadingScreen = false }
         screenUpload = .sending(0)
-        Log.settings.notice("screen upload: \(frames.count) frames, \(packets.count) packets")
-        for (i, packet) in packets.enumerated() {
-            var acked = false
-            for _ in 0..<3 where !acked {
-                acked = (try? await channel.exchange(packet.bytes, timeout: packet.timeout) { Screen.acknowledges($0, packet) }) != nil
+        Log.settings.notice("screen upload: \(frames.count) frames")
+        var port = ScreenChipPort.find()
+        if port == nil {
+            try? await channel.send(ScreenChip.switchCommand)
+            for _ in 0..<60 where port == nil {
+                try? await Task.sleep(for: .milliseconds(500))
+                port = ScreenChipPort.find()
             }
-            guard acked else {
-                Log.settings.error("screen upload stopped at packet \(i) (command \(packet.command))")
-                screenUpload = .failed("The controller stopped answering. Slide the power switch on the back off and on, then try again.")
-                return
-            }
-            if i % 25 == 0 { screenUpload = .sending(Double(i) / Double(packets.count)) }
         }
-        screenUpload = .done
+        guard let port else {
+            screenUpload = .failed("The controller didn't switch to updating its screen. Unplug the cable, plug it back in and try again.")
+            return
+        }
+        do {
+            try await Task.detached { [weak self] in
+                var shown = 0.0
+                try ScreenChipPort.upload(frames, frameTime: frameTime, restoreDefault: restoreDefault, port: port) { p in
+                    guard p - shown >= 0.01 || p >= 1 else { return }
+                    shown = p
+                    Task { @MainActor in self?.screenUpload = .sending(p) }
+                }
+            }.value
+            screenUpload = .done
+        } catch {
+            let message = (error as? ScreenChipPort.Failed)?.message ?? error.localizedDescription
+            Log.settings.error("screen upload failed: \(message, privacy: .public)")
+            screenUpload = .failed(message + " Try again; the controller waits in update mode until an upload finishes.")
+        }
     }
 
     func restoreDefaultScreen() async {
         guard let url = defaultScreenFile, let data = try? Data(contentsOf: url) else { return }
-        await uploadScreen(Screen.frames(in: [UInt8](data)))
+        // Space Station restores with no frame time and the restore flag set.
+        await uploadScreen(Screen.frames(in: [UInt8](data)), frameTime: 0, restoreDefault: true)
     }
 
     // MARK: - Live view
@@ -594,6 +638,7 @@ final class ControllerService {
         for _ in 0..<3 {
             if let reply = try? await channel.request(Flydigi.frame(.getInfo)), let info = DeviceInfo(reply: reply) {
                 self.info = info
+                UserDefaults.standard.set(Int(info.deviceID), forKey: Self.lastDeviceIDKey)
                 return
             }
             try? await Task.sleep(for: .milliseconds(300))

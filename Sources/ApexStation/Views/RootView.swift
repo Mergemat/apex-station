@@ -122,7 +122,9 @@ struct RootView: View {
     }
 
     @ViewBuilder private var hint: some View {
-        let text: String? = if !service.connected && service.bluetooth {
+        let text: String? = if service.screenChipWaiting {
+            "The controller is waiting for a screen upload to finish. Open Screen and upload again"
+        } else if !service.connected && service.bluetooth {
             "Bluetooth shows the controller live. Use the cable to change settings"
         } else if !service.connected {
             "Connect your Apex 5: USB-C cable, its 2.4 GHz receiver, or PC Bluetooth mode"

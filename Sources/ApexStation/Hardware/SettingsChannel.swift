@@ -32,8 +32,6 @@ final class SettingsChannel: @unchecked Sendable {
     private let lock = NSLock()
     private var device: IOHIDDevice?
     private var waiting: [UInt8: [(id: UUID, cont: CheckedContinuation<[UInt8], Error>)]] = [:]
-    /// A packet outside the 5A A5 protocol waiting for its reply (screen uploads).
-    private var rawWaiter: (id: UUID, matches: ([UInt8]) -> Bool, cont: CheckedContinuation<[UInt8], Error>)?
     /// Multi-reply requests: every reply for the command goes to `take` until it returns true.
     private var collectors: [UInt8: (id: UUID, take: ([UInt8]) -> Bool, cont: CheckedContinuation<Void, Error>)] = [:]
 
@@ -92,31 +90,6 @@ final class SettingsChannel: @unchecked Sendable {
         cont?.resume(with: result)
     }
 
-    /// Sends `bytes` (what follows the report ID) and waits for the first reply that `matches`,
-    /// given without the report ID. For packets outside the 5A A5 protocol, like screen uploads.
-    func exchange(_ bytes: [UInt8], timeout: Duration, matches: @escaping @Sendable ([UInt8]) -> Bool) async throws -> [UInt8] {
-        let id = UUID()
-        return try await withCheckedThrowingContinuation { cont in
-            lock.withLock { rawWaiter = (id, matches, cont) }
-            let ms = Int(timeout.components.seconds * 1000) + Int(timeout.components.attoseconds / 1_000_000_000_000_000)
-            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(ms)) { [self] in
-                finishRaw(id, .failure(Timeout()))
-            }
-            sendQueue.async { [self] in
-                if let error = sendNow(Data(bytes), log: false) { finishRaw(id, .failure(error)) }
-            }
-        }
-    }
-
-    private func finishRaw(_ id: UUID, _ result: Result<[UInt8], Error>) {
-        let cont = lock.withLock { () -> CheckedContinuation<[UInt8], Error>? in
-            guard let w = rawWaiter, w.id == id else { return nil }
-            rawWaiter = nil
-            return w.cont
-        }
-        cont?.resume(with: result)
-    }
-
     /// Sends a command that has no reply.
     func send(_ frame: Data) async throws {
         let error: Error? = await withCheckedContinuation { cont in
@@ -127,9 +100,9 @@ final class SettingsChannel: @unchecked Sendable {
 
     // MARK: - IOKit
 
-    private func sendNow(_ frame: Data, log: Bool = true) -> Error? {
+    private func sendNow(_ frame: Data) -> Error? {
         guard let device = lock.withLock({ self.device }) else { return Disconnected() }
-        if log { Log.settings.notice("out: \(frame.prefix(8).map { String(format: "%02x", $0) }.joined(separator: " "), privacy: .public)") }
+        Log.settings.notice("out: \(frame.prefix(8).map { String(format: "%02x", $0) }.joined(separator: " "), privacy: .public)")
         // IOKit takes the report ID as the first byte of the buffer as well as the parameter.
         let report = [Flydigi.commandReportID] + [UInt8](frame)
         let result = report.withUnsafeBufferPointer {
@@ -178,8 +151,6 @@ final class SettingsChannel: @unchecked Sendable {
             guard self.device === device else { return nil }
             self.device = nil
             defer { waiting = [:] }
-            rawWaiter?.cont.resume(throwing: Disconnected())
-            rawWaiter = nil
             let pendingCollectors = collectors.values.map(\.cont)
             collectors = [:]
             pendingCollectors.forEach { $0.resume(throwing: Disconnected()) }
@@ -195,11 +166,6 @@ final class SettingsChannel: @unchecked Sendable {
         if command == Flydigi.Command.input.rawValue {
             if let state = FlydigiInputReport.parse(report) { live.update(state) }
             return
-        }
-        if let w = lock.withLock({ rawWaiter }) {
-            let body = Array(report.dropFirst())
-            if w.matches(body) { finishRaw(w.id, .success(body)); return }
-            Log.settings.notice("raw in: \(report.prefix(12).map { String(format: "%02x", $0) }.joined(separator: " "), privacy: .public)")
         }
         guard let command else { return }
         if let c = lock.withLock({ collectors[command] }) {

@@ -248,8 +248,8 @@ struct ScreenPreview: View {
 
     var body: some View {
         let range = selection.first...selection.last
-        TimelineView(.animation(minimumInterval: Double(source.period) / 10, paused: range.count < 2)) { t in
-            let i = range.lowerBound + Int(t.date.timeIntervalSinceReferenceDate * 10 / Double(source.period)) % range.count
+        TimelineView(.animation(minimumInterval: Double(source.frameTime) / 100, paused: range.count < 2)) { t in
+            let i = range.lowerBound + Int(t.date.timeIntervalSinceReferenceDate * 100 / Double(source.frameTime)) % range.count
             if let frame = source.render(frame: i, crop: selection.crop)?.image {
                 Image(decorative: frame, scale: 1).resizable().interpolation(.none)
             }

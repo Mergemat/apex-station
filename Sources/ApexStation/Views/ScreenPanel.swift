@@ -34,7 +34,7 @@ struct ScreenPanel: View {
             if let source, let selection {
                 uploadButton(title: "Put it on the controller") {
                     let frames = (selection.first...selection.last).map { source.encoded(frame: $0, crop: selection.crop) }
-                    await service.uploadScreen(frames)
+                    await service.uploadScreen(frames, frameTime: source.frameTime)
                 }
             }
             status
@@ -93,23 +93,22 @@ struct ScreenPanel: View {
         case .sending(let p)?:
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: p).tint(Theme.accent)
-                Text("Sending… \(Int(p * 100))%. Keep the cable plugged in.").font(Theme.noteFont).foregroundStyle(Theme.label)
+                Text("Sending… \(Int(p * 100))%. The controller is offline until it's done; keep the cable plugged in.")
+                    .font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         case .done?:
-            Note("Done. Press the power button on the back of the controller to restart it, and the new screen shows.")
+            Note("Done.")
         case .failed(let message)?:
             Text(message).font(Theme.noteFont).foregroundStyle(Theme.warning)
-        case nil where service.connected && !viaReceiver:
-            Note("Uploading goes through Flydigi's 2.4 GHz receiver, like on Windows: the cable can't carry it. Plug the receiver in and switch the controller to 2.4G mode.")
+        case nil where service.connected && !service.canUploadScreen:
+            Note("Uploading to the screen needs the USB cable.")
         case nil:
             EmptyView()
         }
     }
 
-    private var viaReceiver: Bool { service.info?.connection == .wireless }
-
     private func uploadButton(title: String, primary: Bool = true, action: @escaping () async -> Void) -> some View {
-        let enabled = service.connected && viaReceiver && !service.saving
+        let enabled = service.canUploadScreen && !service.saving
         return Button { Task { await action() } } label: {
             Text(title)
                 .font(Theme.buttonFont)
@@ -141,8 +140,8 @@ struct SourceAnimation: Identifiable {
     let id = UUID()
     let name: String
     let frames: [CGImage]
-    /// Time per frame from the GIF, in 100 ms steps (1 for still pictures).
-    let period: Int
+    /// Time per frame from the GIF, in 10 ms steps, as the screen takes it.
+    let frameTime: Int
 
     var count: Int { frames.count }
     var size: CGSize { CGSize(width: frames[0].width, height: frames[0].height) }
@@ -162,7 +161,7 @@ struct SourceAnimation: Identifiable {
         name = url.lastPathComponent
         self.frames = frames
         let average = delays.isEmpty ? 0.1 : delays.reduce(0, +) / Double(delays.count)
-        period = max(1, min(20, Int((average * 10).rounded())))
+        frameTime = max(1, min(255, Int((average * 100).rounded())))
     }
 
     /// Frame `i` with `crop` (in image pixels) drawn over a black 160×80 canvas.

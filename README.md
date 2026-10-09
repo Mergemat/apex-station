@@ -29,7 +29,8 @@ Click any part of the controller to change it.
   and vibration.
 - **Vibration, gyro and lighting:** motor strength, gyro as a stick or mouse with an activation
   button, and light-bar colours, effects, brightness and the vibration light effect.
-- **Screen:** put your own picture or GIF on the controller's display (up to 150 frames).
+- **Screen:** put your own picture or GIF on the controller's display (up to 150 frames), over
+  the cable.
 - **Profiles:** all four on-board profiles, with switching, renaming, reset, and export/import
   as files.
 - **Controller settings:** polling rate (up to 1000 Hz), sleep timer, Fast Swap, Home as the Xbox
@@ -94,7 +95,8 @@ It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` 
 ## Safety
 
 The app only uses the commands Space Station uses for settings, profiles, lighting and the
-screen. It never touches firmware. Each change writes only the bytes that differ, reads the profile back so the app shows what the controller stored, and
+screen. It never writes firmware: for the screen it uses the screen chip's update mode the way
+Space Station does, and the chip only takes pictures into its picture area. Each change writes only the bytes that differ, reads the profile back so the app shows what the controller stored, and
 keeps a backup in `~/Library/Application Support/Apex Station/Backups`.
 
 Not affiliated with Flydigi.

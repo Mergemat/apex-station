@@ -25,7 +25,7 @@ struct Inspector: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    if !service.connected, control != .test { Note(service.cableNote("this")) }
+                    if !service.connected, control != .test, !service.updatingScreen { Note(service.cableNote("this")) }
                     content
                 }
             }
