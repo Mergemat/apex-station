@@ -446,51 +446,34 @@ final class ControllerService {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// Sends an animation (encoded frames, `period` × 100 ms each) to the controller's screen,
-    /// over the cable's Xbox interface. It shows after the controller restarts.
-    func uploadScreen(_ frames: [[UInt8]], period: Int) async {
+    /// Sends an animation (encoded frames) to the controller's screen, through the 2.4 GHz
+    /// receiver (see `Screen`). It shows after the controller restarts.
+    func uploadScreen(_ frames: [[UInt8]]) async {
         guard connected, !frames.isEmpty, !saving else { return }
-        // A takeover silences the Xbox interface, and its replies with it.
-        guard !held else {
-            screenUpload = .failed("Close the input test and turn off keyboard & mouse while uploading.")
-            return
-        }
+        let packets = Screen.uploadPackets(frames: Array(frames.prefix(Screen.maxFrames)))
         saving = true
         uploadingScreen = true
-        defer { saving = false; uploadingScreen = false; xinput.setWanted(showingWindow) }
+        defer { saving = false; uploadingScreen = false }
         screenUpload = .sending(0)
-        xinput.setWanted(true)
-        for _ in 0..<100 where !xinput.isOpen { try? await Task.sleep(for: .milliseconds(20)) }
-        let packets = Screen.uploadPackets(frames: Array(frames.prefix(Screen.maxFrames)), period: period)
         Log.settings.notice("screen upload: \(frames.count) frames, \(packets.count) packets")
-        let pipe = xinput
-        let failedAt: Int? = await Task.detached { [weak self] () -> Int? in
-            for (i, packet) in packets.enumerated() {
-                let timeout = Double(packet.timeout.components.seconds) + Double(packet.timeout.components.attoseconds) / 1e18
-                var acked = false
-                for _ in 0..<3 where !acked {
-                    acked = pipe.exchange(packet.bytes, timeout: timeout) { Screen.acknowledges($0, packet) } != nil
-                }
-                if !acked { return i }
-                if i % 50 == 0 {
-                    let progress = Double(i) / Double(packets.count)
-                    await MainActor.run { self?.screenUpload = .sending(progress) }
-                }
+        for (i, packet) in packets.enumerated() {
+            var acked = false
+            for _ in 0..<3 where !acked {
+                acked = (try? await channel.exchange(packet.bytes, timeout: packet.timeout) { Screen.acknowledges($0, packet) }) != nil
             }
-            return nil
-        }.value
-        if let failedAt {
-            Log.settings.error("screen upload stopped at packet \(failedAt) (command \(packets[failedAt].command))")
-            screenUpload = .failed("The controller stopped answering. Slide the power switch on the back off and on, then try again.")
-        } else {
-            screenUpload = .done
+            guard acked else {
+                Log.settings.error("screen upload stopped at packet \(i) (command \(packet.command))")
+                screenUpload = .failed("The controller stopped answering. Slide the power switch on the back off and on, then try again.")
+                return
+            }
+            if i % 25 == 0 { screenUpload = .sending(Double(i) / Double(packets.count)) }
         }
+        screenUpload = .done
     }
 
     func restoreDefaultScreen() async {
         guard let url = defaultScreenFile, let data = try? Data(contentsOf: url) else { return }
-        // Space Station sends the stock animation with period 0.
-        await uploadScreen(Screen.frames(in: [UInt8](data)), period: 0)
+        await uploadScreen(Screen.frames(in: [UInt8](data)))
     }
 
     // MARK: - Live view
@@ -517,12 +500,7 @@ final class ControllerService {
 
     /// The main window shows the controller: read the cable's Xbox interface so the drawing is
     /// live without a takeover. Closed, it's let go so Steam can use it.
-    func showingController(_ on: Bool) {
-        showingWindow = on
-        if !uploadingScreen { xinput.setWanted(on) }
-    }
-
-    @ObservationIgnored private var showingWindow = false
+    func showingController(_ on: Bool) { xinput.setWanted(on) }
 
     private func watchXInput() async {
         for await open in xinput.eventStream {

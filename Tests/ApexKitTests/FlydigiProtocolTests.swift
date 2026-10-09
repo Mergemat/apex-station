@@ -449,45 +449,33 @@ struct MacroRecorderTests {
     }
 
     @Test func oneFrameUploadsAsStartChunksEndFinish() {
-        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))], period: 1)
-        // 25604 bytes in 26-byte chunks: 985.
-        #expect(packets.count == 1 + 985 + 1 + 1)
-        // Start: still (type 0), 1 frame, frame 1, 100 ms, size 0x6404;
-        // sum D0+09+01+00+01+01+01+64+04 = 0x145 → 0x45.
-        #expect(packets[0].bytes == [0xA5, 0xD0, 0x09, 0x01, 0x00, 0x01, 0x01, 0x01, 0x64, 0x04, 0x45, 0, 0, 0, 0])
-        // Last chunk: offset 984 × 26 = 25584 = 0x63F0, 20 bytes then zeros, 31 bytes in all.
-        let last = packets[985]
-        #expect(last.bytes.count == 31 && Array(last.bytes[0..<4]) == [0xA5, 0xD1, 0x63, 0xF0])
-        // End: frame 1; sum D2+07+01+01+64+04 = 0x143 → 0x43.
-        #expect(packets[986].bytes == [0xA5, 0xD2, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x43, 0, 0, 0, 0, 0, 0])
-        // Finish: 1 frame; sum D3+07+01+01+64+04 = 0x144 → 0x44.
-        #expect(packets[987].bytes.prefix(9) == [0xA5, 0xD3, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x44])
+        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))])
+        #expect(packets.count == 1 + 442 + 1 + 1)
+        // Start: still image (type 1), 1 frame, index sent as 2, size 0x6404; sum D0+09+01+01+01+02+64+04 = 0x46.
+        #expect(packets[0].bytes == [0xA5, 0xD0, 0x09, 0x01, 0x01, 0x01, 0x02, 0x00, 0x64, 0x04, 0x46, 0, 0, 0])
+        // Last chunk: offset 25578 = 0x63EA, 26 bytes of pixels then zeros.
+        let last = packets[442]
+        #expect(last.bytes.count == 95 && Array(last.bytes[0..<4]) == [0xA5, 0xD1, 0x63, 0xEA])
+        #expect(last.offset == 25578)
+        // Finish: its sum covers D3, 07, 01, count and 0x64 only = 0x40.
+        #expect(packets[444].bytes.prefix(9) == [0xA5, 0xD3, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x40])
     }
 
-    @Test func chunkChecksumCoversEverythingAfterA5() {
-        let chunk = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(255, 255, 255))], period: 1)[1]
-        // D1 + offset 0 + header 04 80 02 0A + 11 white pixels (FF FF) = 0xD1 + 0x90 + 22 × 0xFF.
-        #expect(chunk.bytes[30] == UInt8((0xD1 + 0x90 + 22 * 0xFF) & 0xFF))
+    @Test func chunkChecksumCoversCommandToEnd() {
+        let chunk = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(255, 255, 255))])[1]
+        // D1 + offset 0 + header 04 80 02 0A + 27 white pixels (FF FF) = 0xD1 + 0x90 + 54 × 0xFF.
+        #expect(chunk.bytes[94] == UInt8((0xD1 + 0x90 + 54 * 0xFF) & 0xFF))
     }
 
     @Test func acknowledgementsFollowSpaceStation() {
-        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))], period: 1)
-        func reply(_ cmd: UInt8, status: UInt8 = 0, _ hi: UInt8 = 0, _ lo: UInt8 = 0) -> [UInt8] {
-            var r = [UInt8](repeating: 0, count: 32)
-            r[0] = 0x01
-            r[14] = 0x5A; r[15] = 0xA5; r[16] = cmd; r[18] = status; r[19] = hi; r[20] = lo
-            return r
-        }
-        #expect(Screen.acknowledges(reply(0xD0), packets[0]))
-        #expect(Screen.acknowledges(reply(0xD1, 0x63, 0xF0), packets[985]))
-        #expect(!Screen.acknowledges(reply(0xD1), packets[985]))            // wrong offset
-        #expect(!Screen.acknowledges(reply(0xD1, status: 1, 0x63, 0xF0), packets[985])) // resend
-        #expect(Screen.acknowledges(reply(0xD2), packets[987]))             // finish answered by an end reply
-        var gamepad = reply(0xD0)
-        gamepad[0] = 0x00; gamepad[1] = 0x14
-        #expect(!Screen.acknowledges(gamepad, packets[0]))
+        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))])
+        #expect(Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD1, 0x00, 0x00, 0x63, 0xEA], packets[442]))
+        #expect(!Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD1, 0x00, 0x00, 0x00, 0x00], packets[442]))
+        #expect(!Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD2, 0x00, 0x01, 0x00, 0x00], packets[443]))
+        #expect(Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD0, 0x00, 0x05, 0x00, 0x00], packets[0]))
     }
 }
+
 
 @Suite struct ProfileFileTests {
     let record = try! [UInt8](Data(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-profile0", withExtension: "bin")!))

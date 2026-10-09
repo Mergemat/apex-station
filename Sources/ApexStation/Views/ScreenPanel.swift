@@ -12,15 +12,13 @@ struct ScreenPanel: View {
     @ViewState private var crop = Crop()
     @ViewState private var first = 0
     @ViewState private var last = 0
-    /// Time per frame, in 100 ms steps (what the controller takes).
-    @ViewState private var period = 1
     @ViewState private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Caption("Animation")
             if let source {
-                CropEditor(source: source, crop: $crop, range: first...last, period: period)
+                CropEditor(source: source, crop: $crop, range: first...last, period: source.period)
                 cropControls(source)
             } else {
                 placeholder
@@ -36,7 +34,7 @@ struct ScreenPanel: View {
             if let source {
                 uploadButton(title: "Put it on the controller") {
                     let frames = (first...last).map { source.encoded(frame: $0, crop: crop) }
-                    await service.uploadScreen(frames, period: period)
+                    await service.uploadScreen(frames)
                 }
             }
             status
@@ -92,8 +90,7 @@ struct ScreenPanel: View {
                 last = max(v - 1, first)
                 first = max(first, last - Screen.maxFrames + 1)
             }
-            ValueSlider(title: "Frame time", range: 1...20, unit: "00 ms", value: period) { v in period = v }
-            Text("\(last - first + 1) of \(source.count) frames (up to \(Screen.maxFrames))")
+            Text("\(last - first + 1) of \(source.count) frames (up to \(Screen.maxFrames)). The controller plays them at its own speed.")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.label)
         }
     }
@@ -109,8 +106,8 @@ struct ScreenPanel: View {
             Note("Done. Press the power button on the back of the controller to restart it, and the new screen shows.")
         case .failed(let message)?:
             Text(message).font(.system(size: 11.5)).foregroundStyle(.orange)
-        case nil where service.connected && viaReceiver:
-            Note("Uploading needs the USB-C cable; the 2.4 GHz receiver doesn't pass it on.")
+        case nil where service.connected && !viaReceiver:
+            Note("Uploading goes through Flydigi's 2.4 GHz receiver, like on Windows: the cable can't carry it. Plug the receiver in and switch the controller to 2.4G mode.")
         case nil:
             EmptyView()
         }
@@ -119,7 +116,7 @@ struct ScreenPanel: View {
     private var viaReceiver: Bool { service.info?.connection == .wireless }
 
     private func uploadButton(title: String, primary: Bool = true, action: @escaping () async -> Void) -> some View {
-        let enabled = service.connected && !viaReceiver && !service.saving
+        let enabled = service.connected && viaReceiver && !service.saving
         return Button { Task { await action() } } label: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
@@ -145,7 +142,6 @@ struct ScreenPanel: View {
         crop = Crop()
         first = 0
         last = min(animation.count, Screen.maxFrames) - 1
-        period = animation.period
     }
 }
 
