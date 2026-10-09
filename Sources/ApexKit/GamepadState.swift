@@ -27,7 +27,10 @@ public struct GamepadButtons: OptionSet, Sendable, Hashable {
     public static let z = Self(rawValue: 1 << 20)
     public static let leftMacro = Self(rawValue: 1 << 21)
     public static let rightMacro = Self(rawValue: 1 << 22)
-    public static let circle = Self(rawValue: 1 << 23)
+    /// The small Turbo key.
+    public static let turbo = Self(rawValue: 1 << 23)
+    /// The small key next to Turbo (Space Station calls it "Menu").
+    public static let fn = Self(rawValue: 1 << 24)
 }
 
 /// A stick position in XInput convention: centre 0, right and up positive.

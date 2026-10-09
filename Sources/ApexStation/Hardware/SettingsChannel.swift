@@ -58,21 +58,25 @@ actor SettingsChannel {
         return try await withCheckedThrowingContinuation { cont in
             // Registered before sending, so a fast reply can't slip past.
             waiting[command, default: []].append((id, cont))
+            // The timeout runs on its own, so a send that never completes can't hang the caller.
             Task {
-                do { try await self.send(frame) } catch { self.resolve(command, id, .failure(error)) }
                 try? await Task.sleep(for: timeout)
                 self.resolve(command, id, .failure(Timeout()))
+            }
+            Task {
+                do { try await self.send(frame, timeout: timeout) } catch { self.resolve(command, id, .failure(error)) }
             }
         }
     }
 
     /// Sends a command that has no reply.
-    func send(_ frame: Data) async throws {
+    func send(_ frame: Data, timeout: Duration = .milliseconds(500)) async throws {
         guard let client else { throw Disconnected() }
         Log.settings.notice("out: \(frame.prefix(8).map { String(format: "%02x", $0) }.joined(separator: " "), privacy: .public)")
         // CoreHID wants the report ID both as the parameter and as the first data byte.
         try await client.dispatchSetReportRequest(
-            type: .output, id: HIDReportID(rawValue: Flydigi.commandReportID), data: Data([Flydigi.commandReportID]) + frame)
+            type: .output, id: HIDReportID(rawValue: Flydigi.commandReportID), data: Data([Flydigi.commandReportID]) + frame,
+            timeout: timeout)
     }
 
     private func resolve(_ command: UInt8, _ id: UUID, _ result: Result<[UInt8], Error>) {

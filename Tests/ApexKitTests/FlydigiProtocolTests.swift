@@ -68,6 +68,18 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(s.buttons == [.a, .dpadRight, .guide])
     }
 
+    @Test func smallKeysAndShoulderExtrasMatchSpaceStation() throws {
+        // Space Station's table: byte 14 Menu(Fn) 0x01, Turbo 0x02, Home 0x08; byte 13 M5 0x40, M6 0x80.
+        let s = try #require(FlydigiInputReport.parse(frame(b13: 0xC0, b14: 0x0B)))
+        #expect(s.buttons == [.fn, .turbo, .guide, .leftMacro, .rightMacro])
+    }
+
+    @Test func triggerPressedFlagsAreNotButtons() throws {
+        // Byte 12's 0x10/0x20 mirror the analog triggers; they must not light anything else.
+        let s = try #require(FlydigiInputReport.parse(frame(b12: 0x30)))
+        #expect(s.buttons.isEmpty)
+    }
+
     @Test func stickYIsAlreadyUpPositive() throws {
         // On the real controller, pushing the left stick up reports a positive Y.
         let s = try #require(FlydigiInputReport.parse(frame(ly: 32767)))

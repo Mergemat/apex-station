@@ -140,7 +140,9 @@ public enum FlydigiInputReport {
     private static let byte13: [(UInt8, GamepadButtons)] = [
         (0x01, .c), (0x02, .z), (0x04, .m1), (0x08, .m2), (0x10, .m3), (0x20, .m4), (0x40, .leftMacro), (0x80, .rightMacro),
     ]
-    private static let byte14: [(UInt8, GamepadButtons)] = [(0x01, .circle), (0x08, .guide)]
+    // Bit layout matches Space Station's own parser for the Apex 5. Byte 12's 0x10/0x20 are
+    // LT/RT "pressed" flags; the analog values in bytes 15/16 carry the same information.
+    private static let byte14: [(UInt8, GamepadButtons)] = [(0x01, .fn), (0x02, .turbo), (0x08, .guide)]
     private static let dpad: [(UInt8, GamepadButtons)] = [(0x01, .dpadUp), (0x02, .dpadRight), (0x04, .dpadDown), (0x08, .dpadLeft)]
 
     public static func parse(_ r: some RandomAccessCollection<UInt8>) -> GamepadState? {

@@ -57,8 +57,8 @@ struct ControllerDrawing: View {
         key(&ctx, .capsule(CGRect(x: 40, y: 480, width: 100, height: 26)), "M4", b.contains(.m4))
         key(&ctx, .capsule(CGRect(x: 360, y: 446, width: 100, height: 26)), "M1", b.contains(.m1))
         key(&ctx, .capsule(CGRect(x: 360, y: 480, width: 100, height: 26)), "M3", b.contains(.m3))
-        key(&ctx, .capsule(CGRect(x: 196, y: 476, width: 50, height: 22)), "TURBO", b.contains(.c), small: true)
-        key(&ctx, .capsule(CGRect(x: 254, y: 476, width: 50, height: 22)), "FN", b.contains(.z), small: true)
+        key(&ctx, .capsule(CGRect(x: 196, y: 476, width: 50, height: 22)), "TURBO", b.contains(.turbo), small: true)
+        key(&ctx, .capsule(CGRect(x: 254, y: 476, width: 50, height: 22)), "FN", b.contains(.fn), small: true)
     }
 
     // MARK: - Body
