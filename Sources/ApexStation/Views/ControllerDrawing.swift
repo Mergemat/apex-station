@@ -24,6 +24,26 @@ struct ControllerDrawing: View {
     }
 
     private var b: GamepadButtons { live ? state.buttons : [] }
+
+    /// What each remapped control does instead, short.
+    private var remaps: [ControllerControl: String] {
+        guard let profile else { return [:] }
+        var out: [ControllerControl: String] = [:]
+        for (key, mapping) in profile.remapped {
+            out[ControllerControl(key)] = switch mapping {
+            case .button(let k): k.shortName
+            case .macro: "Macro"
+            case .keyboardOrMouse: "Key"
+            default: "•"
+            }
+        }
+        return out
+    }
+
+    /// Controls drawn as their own keys, which show a remap inside; the rest get a badge.
+    private static let keyed: Set<ControllerControl> = [
+        .key(.lt), .key(.rt), .key(.lm), .key(.rm), .key(.m1), .key(.m2), .key(.m3), .key(.m4), .key(.turbo), .key(.fn),
+    ]
     private typealias L = ControllerLayout
 
     /// Maps a point in the view to the control under it.
@@ -37,10 +57,11 @@ struct ControllerDrawing: View {
 
     private func draw(_ ctx: inout GraphicsContext) {
         // Shoulder row above the body: triggers fill with how far they're pulled.
-        trigger(&ctx, L.lt, "LT", live ? state.leftTrigger : 0)
-        trigger(&ctx, L.rt, "RT", live ? state.rightTrigger : 0)
-        key(&ctx, L.lm, "LM", b.contains(.leftMacro))
-        key(&ctx, L.rm, "RM", b.contains(.rightMacro))
+        let remaps = remaps
+        trigger(&ctx, L.lt, "LT", live ? state.leftTrigger : 0, remap: remaps[.key(.lt)])
+        trigger(&ctx, L.rt, "RT", live ? state.rightTrigger : 0, remap: remaps[.key(.rt)])
+        key(&ctx, L.lm, "LM", b.contains(.leftMacro), remap: remaps[.key(.lm)])
+        key(&ctx, L.rm, "RM", b.contains(.rightMacro), remap: remaps[.key(.rm)])
 
         // The bumpers sit behind the body; only their tops show.
         bumper(&ctx, L.bumperLeft, on: b.contains(.leftBumper))
@@ -80,9 +101,9 @@ struct ControllerDrawing: View {
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
         caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
-        for (shape, name, on) in [(L.m2, "M2", b.contains(.m2)), (L.m4, "M4", b.contains(.m4)),
-                                  (L.m1, "M1", b.contains(.m1)), (L.m3, "M3", b.contains(.m3))] {
-            key(&ctx, shape, name, on)
+        for (shape, key, name, on) in [(L.m2, FlydigiKey.m2, "M2", b.contains(.m2)), (L.m4, .m4, "M4", b.contains(.m4)),
+                                       (L.m1, .m1, "M1", b.contains(.m1)), (L.m3, .m3, "M3", b.contains(.m3))] {
+            self.key(&ctx, shape, name, on, remap: remaps[.key(key)])
         }
         key(&ctx, Path(roundedRect: L.turbo, cornerRadius: L.turbo.height / 2), "TURBO", b.contains(.turbo), small: true)
         key(&ctx, Path(roundedRect: L.fn, cornerRadius: L.fn.height / 2), "FN", b.contains(.fn), small: true)
@@ -104,29 +125,21 @@ struct ControllerDrawing: View {
             g.stroke(p, with: .color(Theme.glow), lineWidth: 5)
             ctx.stroke(p, with: .color(.white), lineWidth: 2)
         }
-        guard let profile else { return }
-        for (key, mapping) in profile.remapped {
-            guard let p = regions[ControllerControl(key)] else { continue }
-            let text: String = switch mapping {
-            case .button(let k): "→ " + k.name
-            case .macro: "MACRO"
-            case .keyboardOrMouse: "KEY"
-            default: "•"
-            }
-            tag(&ctx, text, near: p.boundingRect)
+        // Remapped body controls: a blue outline and a badge under the control.
+        for (control, text) in remaps where !Self.keyed.contains(control) {
+            guard let p = regions[control] else { continue }
+            ctx.stroke(p, with: .color(Theme.glow.opacity(0.9)), lineWidth: 1.4)
+            badge(&ctx, "→ " + text, under: p.boundingRect)
         }
     }
 
-    /// A small pill just outside a control's top-right corner.
-    private func tag(_ ctx: inout GraphicsContext, _ text: String, near r: CGRect) {
-        let width = CGFloat(text.count) * 6 + 12
-        let pill = CGRect(x: r.maxX - width / 2, y: r.minY - 11, width: width, height: 15)
-        let shape = Path(roundedRect: pill, cornerRadius: 7.5)
-        var g = ctx
-        g.addFilter(.blur(radius: 5))
-        g.fill(shape, with: .color(Theme.accent.opacity(0.6)))
+    /// A small pill centred just under a control.
+    private func badge(_ ctx: inout GraphicsContext, _ text: String, under r: CGRect) {
+        let width = CGFloat(text.count) * 5 + 10
+        let pill = CGRect(x: r.midX - width / 2, y: r.maxY + 2, width: width, height: 12)
+        let shape = Path(roundedRect: pill, cornerRadius: 6)
         ctx.fill(shape, with: .color(Theme.accent))
-        label(&ctx, text, at: CGPoint(x: pill.midX, y: pill.midY), size: 8, color: .white)
+        label(&ctx, text, at: CGPoint(x: pill.midX, y: pill.midY), size: 7, color: .white)
     }
 
     // MARK: - Body
@@ -183,15 +196,27 @@ struct ControllerDrawing: View {
                                           startPoint: p.boundingRect.origin, endPoint: CGPoint(x: p.boundingRect.maxX, y: p.boundingRect.maxY)))
     }
 
-    private func key(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ on: Bool, small: Bool = false) {
+    /// A key above or below the body. A remapped key shows its name small and what it does under
+    /// it, and gets a blue outline.
+    private func key(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ on: Bool, small: Bool = false, remap: String? = nil) {
         if on { glow(&ctx, p) } else { ctx.fill(p, with: .color(.white.opacity(0.08))) }
-        ctx.stroke(p, with: .color(.white.opacity(on ? 0.55 : 0.22)), lineWidth: 0.9)
-        label(&ctx, text, at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY), size: small ? 7.5 : 11,
-              color: on ? .white : .white.opacity(0.6))
+        ctx.stroke(p, with: remap != nil && !on ? .color(Theme.glow.opacity(0.85)) : .color(.white.opacity(on ? 0.55 : 0.22)),
+                   lineWidth: remap != nil ? 1.3 : 0.9)
+        names(&ctx, text, remap, in: p.boundingRect, small: small, on: on)
+    }
+
+    private func names(_ ctx: inout GraphicsContext, _ text: String, _ remap: String?, in r: CGRect, small: Bool, on: Bool, dy: CGFloat = 0) {
+        let c = CGPoint(x: r.midX, y: r.midY + dy)
+        guard let remap else {
+            label(&ctx, text, at: c, size: small ? 7.5 : 11, color: on ? .white : .white.opacity(0.6))
+            return
+        }
+        label(&ctx, text, at: CGPoint(x: c.x, y: c.y - 6), size: 8, color: on ? .white : .white.opacity(0.5))
+        label(&ctx, "→ " + remap, at: CGPoint(x: c.x, y: c.y + 6), size: 9.5, color: on ? .white : Theme.glow)
     }
 
     /// A trigger fills from the bottom up as it's pulled.
-    private func trigger(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ value: UInt8) {
+    private func trigger(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ value: UInt8, remap: String? = nil) {
         let r = p.boundingRect
         ctx.fill(p, with: .color(.white.opacity(0.08)))
         let f = CGFloat(value) / 255
@@ -205,8 +230,9 @@ struct ControllerDrawing: View {
             inner.fill(level, with: .linearGradient(Gradient(colors: [Theme.accent, Theme.glow]),
                                                     startPoint: CGPoint(x: r.midX, y: r.maxY), endPoint: CGPoint(x: r.midX, y: r.minY)))
         }
-        ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.22)), lineWidth: 0.9)
-        label(&ctx, text, at: CGPoint(x: r.midX, y: r.midY + 3), size: 11, color: f > 0.4 ? .white : .white.opacity(0.65))
+        ctx.stroke(p, with: remap != nil && f == 0 ? .color(Theme.glow.opacity(0.85)) : .color(.white.opacity(f > 0 ? 0.5 : 0.22)),
+                   lineWidth: remap != nil ? 1.3 : 0.9)
+        names(&ctx, text, remap, in: r, small: false, on: f > 0.4, dy: 3)
     }
 
     /// A stick: its well, and the cap (with the drawing's ribs) moved where the stick is pushed.
