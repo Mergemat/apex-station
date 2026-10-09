@@ -847,29 +847,20 @@ private struct KeyPicker: View {
     private let keys: [FlydigiKey] = [.lt, .rt, .lb, .rb, .l3, .r3, .a, .b, .x, .y, .lm, .rm, .m1, .m2, .m3, .m4]
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(waiting ? "Press a button…" : selection?.name ?? "Always on")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(waiting ? Theme.glow : .white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(Color.white.opacity(0.05), in: .rect(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(waiting ? Theme.accent : Theme.stroke, lineWidth: waiting ? 1.5 : 1))
-            Button(waiting ? "Cancel" : "Record") {
-                if waiting { service.cancelListening(); return }
-                waiting = true
-                Task {
-                    if let key = await service.nextPress(among: keys) { pick(key) }
-                    waiting = false
-                }
-            }
-            .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
-            .padding(.horizontal, 12).padding(.vertical, 8).glass(.capsule, interactive: true)
-            .disabled(!service.canRead && !waiting)
-        }
-        if !service.canRead {
-            Text("Recording needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
-        }
+        AssignCard(chip: selection?.shortName ?? "∞", isSet: selection != nil,
+                   title: selection.map { "Turned on by \($0.name)" } ?? "Always on",
+                   subtitle: "Assign, then press the button that turns gyro on.",
+                   waiting: waiting, waitingTitle: "Press a button…", waitingSubtitle: "Press the button that should turn gyro on.",
+                   canAssign: service.canRead, unavailable: "Assigning needs Full controller, in settings.",
+                   assign: {
+                       waiting = true
+                       Task {
+                           if let key = await service.nextPress(among: keys), waiting { pick(key) }
+                           waiting = false
+                       }
+                   },
+                   cancel: { waiting = false; service.cancelListening() })
+            .onDisappear { if waiting { service.cancelListening() } }
     }
 }
 

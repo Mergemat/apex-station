@@ -13,19 +13,12 @@ struct KeyAssign: View {
     var body: some View {
         let current = service.keyboardMouseMap[key]
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text(listening ? "Press a key…" : current?.label ?? "Nothing")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(listening ? Theme.glow : current == nil ? Theme.label : .white)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).padding(.vertical, 11)
-                    .background(Color.white.opacity(0.05), in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(listening ? Theme.accent : Theme.stroke, lineWidth: listening ? 1.5 : 1))
-                Button(listening ? "Cancel" : "Record") { listening ? stop() : listen() }
-                    .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
-                    .padding(.horizontal, 12).padding(.vertical, 8).glass(.capsule, interactive: true)
-            }
-            HStack(spacing: 8) {
+            AssignCard(chip: current.map(chip) ?? key.shortName, isSet: current != nil,
+                       title: current.map { "Sends \($0.label)" } ?? "Nothing yet",
+                       subtitle: "Assign, then press a key on your keyboard, or pick a mouse action.",
+                       waiting: listening, waitingTitle: "Press a key…",
+                       waitingSubtitle: "Press the key \(key.name) should send.",
+                       resetTitle: "Clear", assign: listen, cancel: stop, reset: { set(nil) }) {
                 Menu {
                     ForEach(KeyboardMouseMap.MouseButton.allCases, id: \.self) { b in
                         Button(KeyboardMouseMap.Output.mouse(b).label) { set(.mouse(b)) }
@@ -34,17 +27,28 @@ struct KeyAssign: View {
                     Button("Scroll up") { set(.scroll(up: true)) }
                     Button("Scroll down") { set(.scroll(up: false)) }
                 } label: {
-                    Label("Mouse", systemImage: "computermouse").font(.system(size: 12.5, weight: .semibold))
+                    Label("Mouse", systemImage: "computermouse")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .glass(.capsule, interactive: true)
                 }
-                .menuStyle(.button).buttonStyle(.plain).fixedSize()
-                .padding(.horizontal, 12).padding(.vertical, 7).glass(.capsule, interactive: true)
-                if current != nil {
-                    Button("Clear") { set(nil) }.buttonStyle(.plain).foregroundStyle(Theme.secondary).font(.system(size: 12.5))
-                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
             }
             KeyboardMouseStatus()
         }
         .onDisappear(perform: stop)
+    }
+
+    /// Short form for the card's chip.
+    private func chip(_ out: KeyboardMouseMap.Output) -> String {
+        switch out {
+        case .key(_, let label): label
+        case .mouse(.left): "L"
+        case .mouse(.right): "R"
+        case .mouse(.middle): "M"
+        case .scroll(true): "↑"
+        case .scroll(false): "↓"
+        }
     }
 
     private func set(_ out: KeyboardMouseMap.Output?) {
