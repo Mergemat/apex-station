@@ -163,7 +163,7 @@ private struct TurboSection: View {
             if let turbo {
                 HStack {
                     Text("Speed").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
-                    Slider(value: $speed, in: 1...30, step: 1) { editing in
+                    Slider(value: Binding(get: { speed }, set: { speed = $0.rounded() }), in: 1...30) { editing in
                         if !editing { Task { await service.setTurbo(key, (turbo.mode, UInt8(speed))) } }
                     }
                     Text("\(Int(speed))/s").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 36)
@@ -190,8 +190,11 @@ private struct StickPanel: View {
     let left: Bool
 
     var body: some View {
-        StickPlot(position: left ? service.state.leftStick : service.state.rightStick, live: service.live)
+        let config = service.editingProfile?.stick(left: left)
+        StickPlot(position: left ? service.state.leftStick : service.state.rightStick, live: service.live,
+                  deadZone: CGFloat(config?.deadZone ?? 0) / 127, edge: CGFloat(config?.edge ?? 127) / 127)
             .frame(height: 200)
+        if let config { StickShape(config: config, left: left) }
         if let profile = service.editingProfile {
             let key: FlydigiKey = left ? .l3 : .r3
             VStack(alignment: .leading, spacing: 10) {
@@ -238,10 +241,75 @@ private struct StickPanel: View {
     }
 }
 
-/// A live plot of one stick with a fading trail, so circling it shows its range.
+/// Dead zone, range, curve and shape for one stick, stored in the active profile.
+private struct StickShape: View {
+    @Environment(ControllerService.self) private var service
+    let config: StickConfig
+    let left: Bool
+    @ViewState private var deadZone: Double = 0
+    @ViewState private var edge: Double = 100
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Caption("Dead zone")
+            slider(value: $deadZone, range: 0...40, unit: "%") { save { $0.deadZone = percentToRaw(deadZone) } }
+            Caption("Full output at")
+            slider(value: $edge, range: 70...100, unit: "%") { save { $0.edge = percentToRaw(edge) } }
+        }
+        VStack(alignment: .leading, spacing: 10) {
+            Caption("Response curve")
+            ChipPicker(options: [StickConfig.Curve.standard, .quick, .slow], selection: config.curve, label: curveLabel) { c in
+                save { $0.curve = c }
+            }
+            Caption("Shape")
+            ChipPicker(options: [false, true], selection: config.circular, label: { $0 ? "Circle" : "Square" }) { c in
+                save { $0.circular = c }
+            }
+        }
+        .onAppear(perform: load)
+        .onChange(of: config) { _, _ in load() }
+    }
+
+    private func load() {
+        deadZone = (Double(config.deadZone) * 100 / 127).rounded()
+        edge = (Double(config.edge) * 100 / 127).rounded()
+    }
+
+    private func percentToRaw(_ percent: Double) -> Int { Int((percent * 127 / 100).rounded()) }
+
+    private func save(_ change: (inout StickConfig) -> Void) {
+        var c = config
+        change(&c)
+        Task { await service.setStick(c, left: left) }
+    }
+
+    private func slider(value: Binding<Double>, range: ClosedRange<Double>, unit: String, commit: @escaping () -> Void) -> some View {
+        HStack {
+            // No step: macOS would draw a tick per step. Values are rounded instead.
+            Slider(value: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = $0.rounded() }), in: range) { editing in
+                if !editing { commit() }
+            }
+            Text("\(Int(value.wrappedValue))\(unit)").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 40)
+        }
+    }
+
+    private func curveLabel(_ c: StickConfig.Curve) -> String {
+        switch c {
+        case .standard: "Default"
+        case .quick: "Quick"
+        case .slow: "Slow"
+        case .custom: "Custom"
+        }
+    }
+}
+
+/// A live plot of one stick with a fading trail, so circling it shows its range. The dead zone
+/// and full-output edge are drawn as rings.
 private struct StickPlot: View {
     let position: StickPosition
     let live: Bool
+    var deadZone: CGFloat = 0
+    var edge: CGFloat = 1
     @ViewState private var trail: [CGPoint] = []
 
     var body: some View {
@@ -255,6 +323,15 @@ private struct StickPlot: View {
             cross.move(to: CGPoint(x: c.x - r, y: c.y)); cross.addLine(to: CGPoint(x: c.x + r, y: c.y))
             cross.move(to: CGPoint(x: c.x, y: c.y - r)); cross.addLine(to: CGPoint(x: c.x, y: c.y + r))
             ctx.stroke(cross, with: .color(Theme.stroke), lineWidth: 0.5)
+            if deadZone > 0 {
+                let d = r * deadZone
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - d, y: c.y - d, width: d * 2, height: d * 2)), with: .color(Theme.accent.opacity(0.18)))
+            }
+            if edge < 1 {
+                let e = r * edge
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - e, y: c.y - e, width: e * 2, height: e * 2)),
+                           with: .color(Theme.accent.opacity(0.6)), style: .init(lineWidth: 1, dash: [4, 4]))
+            }
             for (i, p) in trail.enumerated() {
                 let a = Double(i) / Double(max(1, trail.count))
                 let q = CGPoint(x: c.x + p.x * r, y: c.y - p.y * r)

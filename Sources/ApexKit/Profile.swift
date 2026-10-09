@@ -64,6 +64,26 @@ public enum TurboMode: UInt8, Sendable, Equatable {
     case off = 0, hold = 1, toggle = 2
 }
 
+/// How a stick responds, as stored in a profile.
+public struct StickConfig: Sendable, Equatable {
+    public enum Curve: UInt8, Sendable, CaseIterable { case standard = 0, quick = 1, slow = 2, custom = 3 }
+
+    public var curve: Curve
+    /// Centre dead zone, 0-127 (fraction of full deflection × 127).
+    public var deadZone: Int
+    /// Where full output is reached, 0-127; lower values reach full output sooner.
+    public var edge: Int
+    /// Circle limits diagonals to the circle; rectangle (the default) lets them reach the corners.
+    public var circular: Bool
+
+    public init(curve: Curve, deadZone: Int, edge: Int, circular: Bool) {
+        self.curve = curve
+        self.deadZone = deadZone
+        self.edge = edge
+        self.circular = circular
+    }
+}
+
 /// One of the controller's four on-board profiles: an 840-byte record (format 3.1).
 ///
 /// Layout (from Space Station's parser): 0-1 format version, 2 package count, 3-12 legacy LED,
@@ -137,6 +157,33 @@ public struct Profile: Sendable, Equatable {
         if bytes[i] == 0xFF { bytes[i] = key.rawValue }
         bytes[i + 1] = turbo.mode.rawValue
         bytes[i + 2] = turbo.speed
+    }
+
+    // Sticks: 7 bytes each at 109 (curve type, dead zone, curve point 1 x/y, point 2 x/y, edge) and,
+    // in format 3.1, 12 bytes each at 790 (curve type, 9 custom-curve points, circularity, extra edge).
+    private static func stickBase(_ left: Bool) -> Int { 109 + (left ? 0 : 7) }
+    private static func stickExtra(_ left: Bool) -> Int { 790 + (left ? 0 : 12) }
+
+    /// Values above 127 are stored as negatives (127 - value), as Space Station reads them.
+    private static func signed(_ b: UInt8) -> Int { b > 127 ? 127 - Int(b) : Int(b) }
+
+    public func stick(left: Bool) -> StickConfig {
+        let base = Self.stickBase(left), extra = Self.stickExtra(left)
+        return StickConfig(
+            curve: StickConfig.Curve(rawValue: bytes[base]) ?? .standard,
+            deadZone: Self.signed(bytes[base + 1]),
+            edge: Self.signed(bytes[base + 6]),
+            circular: bytes[extra + 10] == 1)
+    }
+
+    public mutating func setStick(_ c: StickConfig, left: Bool) {
+        let base = Self.stickBase(left), extra = Self.stickExtra(left)
+        // Space Station keeps the curve type in both places.
+        bytes[base] = c.curve.rawValue
+        bytes[extra] = c.curve.rawValue
+        bytes[base + 1] = UInt8(clamping: max(0, min(127, c.deadZone)))
+        bytes[base + 6] = UInt8(clamping: max(0, min(127, c.edge)))
+        bytes[extra + 10] = c.circular ? 1 : 0
     }
 
     /// Buttons that do something other than their own function.

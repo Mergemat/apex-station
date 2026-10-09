@@ -71,6 +71,10 @@ final class ControllerService {
         await edit { $0.setMapping(mapping, for: key) }
     }
 
+    func setStick(_ config: StickConfig, left: Bool) async {
+        await edit { $0.setStick(config, left: left) }
+    }
+
     func setTurbo(_ key: FlydigiKey, _ turbo: (mode: TurboMode, speed: UInt8)?) async {
         await edit { $0.setTurbo(turbo, for: key) }
     }

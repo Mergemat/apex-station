@@ -201,6 +201,24 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(Flydigi.writeProfile(from: old, to: old).isEmpty)
     }
 
+    @Test func realProfileHasDefaultSticks() throws {
+        let p = try #require(Profile(slot: 0, bytes: record))
+        // User's profile: curve type 0, dead zone 0, edge 127, rectangle (bytes 109-122, 790-813).
+        for left in [true, false] {
+            #expect(p.stick(left: left) == StickConfig(curve: .standard, deadZone: 0, edge: 127, circular: false))
+        }
+    }
+
+    @Test func stickEditsTouchOnlyTheirBytes() throws {
+        let old = try #require(Profile(slot: 0, bytes: record))
+        var p = old
+        p.setStick(StickConfig(curve: .quick, deadZone: 20, edge: 110, circular: true), left: false)
+        #expect(p.stick(left: false) == StickConfig(curve: .quick, deadZone: 20, edge: 110, circular: true))
+        #expect(p.stick(left: true) == old.stick(left: true))
+        let changed = (0..<Profile.size).filter { p.bytes[$0] != old.bytes[$0] }
+        #expect(changed == [116, 117, 122, 802, 812]) // type, dead zone, edge, extra type, circularity
+    }
+
     @Test func readFrameMatchesSpaceStation() {
         // A3, len 4, slot 0, chunk size 20, sum 0xBB. This exact frame got the replies above.
         #expect([UInt8](Flydigi.readProfile(0))[0..<7] == [0x5A, 0xA5, 0xA3, 0x04, 0x00, 0x14, 0xBB])
