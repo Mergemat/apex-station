@@ -82,7 +82,7 @@ struct Inspector: View {
     }
 }
 
-private struct Note: View {
+struct Note: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
@@ -92,25 +92,43 @@ private struct Note: View {
 
 // MARK: - Buttons
 
-/// What a button does in the active profile: which button it acts as, and turbo.
+/// What a button does in the active profile: another button or a macro, and turbo.
 private struct ButtonPanel: View {
     @Environment(ControllerService.self) private var service
     let key: FlydigiKey
+    /// Shown while the user sets up a macro that isn't saved yet (`-composeMacro YES` opens it, for screenshots).
+    @ViewState private var composingMacro = UserDefaults.standard.bool(forKey: "composeMacro")
 
     private var profile: Profile? { service.editingProfile }
 
     var body: some View {
         if let profile {
             let mapping = profile.mapping(for: key)
+            let macro = profile.macros.first { $0.key == key }
+            let showsMacro = macro != nil || composingMacro
             VStack(alignment: .leading, spacing: 10) {
                 Caption("Acts as")
-                TargetGrid(key: key, current: mapping) { target in
-                    Task { await service.remap(key, to: target == key ? .standard : .button(target)) }
+                ChipPicker(options: [false, true], selection: showsMacro, label: { $0 ? "Macro" : "Button" }) { wantsMacro in
+                    if wantsMacro { composingMacro = true } else {
+                        composingMacro = false
+                        if macro != nil { Task { await service.removeMacro(on: key) } }
+                    }
                 }
-                if case .macro = mapping { Note("Runs a macro. Macros are coming soon.") }
-                if case .keyboardOrMouse = mapping { Note("Sends a keyboard or mouse input set up in Space Station.") }
+                if !showsMacro {
+                    TargetGrid(key: key, current: mapping) { target in
+                        Task { await service.remap(key, to: target == key ? .standard : .button(target)) }
+                    }
+                    if case .macro = mapping { Note("Runs a macro, but the macro is missing. Pick a button or record a new macro.") }
+                    if case .keyboardOrMouse = mapping { Note("Sends a keyboard or mouse input set up in Space Station.") }
+                }
             }
-            TurboSection(key: key, turbo: profile.turbo(for: key))
+            if showsMacro {
+                let others = profile.macros.filter { $0.key != key }.count
+                MacroEditor(key: key, saved: macro, slotsLeft: Profile.maxMacros - others) { composingMacro = false }
+                    .id("\(profile.slot)-\(key)")
+            } else {
+                TurboSection(key: key, turbo: profile.turbo(for: key))
+            }
             Text("Saved to profile \(profile.slot + 1) on the controller, so it works everywhere: wired, wireless and Switch mode.")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
         } else {
@@ -136,7 +154,7 @@ struct TargetGrid: View {
                 let selected = isOwn ? current == .standard : current == .button(target)
                 Button { pick(target) } label: {
                     VStack(spacing: 2) {
-                        Text(shortName(target)).font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        Text(target.shortName).font(.system(size: 12.5, weight: .semibold, design: .rounded))
                         if isOwn { Text("DEFAULT").font(.system(size: 7, weight: .bold)).tracking(0.8).opacity(0.7) }
                     }
                     .frame(maxWidth: .infinity, minHeight: 38)
@@ -149,16 +167,6 @@ struct TargetGrid: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: current)
-    }
-
-    private func shortName(_ k: FlydigiKey) -> String {
-        switch k {
-        case .up: "↑"
-        case .down: "↓"
-        case .left: "←"
-        case .right: "→"
-        default: k.name
-        }
     }
 }
 
@@ -220,8 +228,8 @@ private struct StickPanel: View {
         }
         if let s = service.settings {
             VStack(alignment: .leading, spacing: 10) {
-                Caption("Precision · both sticks")
-                ChipPicker(options: [DeviceSettings.Precision.bits8, .bits10, .bits12], selection: s.precision, label: { "\($0.bits)-bit" }) { p in
+                Caption("Precision (bits) · both sticks")
+                ChipPicker(options: [DeviceSettings.Precision.bits8, .bits9, .bits10, .bits11, .bits12], selection: s.precision, label: { "\($0.bits)" }) { p in
                     Task { await service.setPrecision(p) }
                 }
             }
@@ -665,6 +673,19 @@ private struct KeyPicker: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+}
+
+extension FlydigiKey {
+    /// A compact label for chips: arrows for the d-pad.
+    var shortName: String {
+        switch self {
+        case .up: "↑"
+        case .down: "↓"
+        case .left: "←"
+        case .right: "→"
+        default: name
         }
     }
 }

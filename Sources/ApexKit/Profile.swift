@@ -166,7 +166,7 @@ public struct GyroConfig: Sendable, Equatable {
 /// 230-767 macros, 770-789 name (UTF-16LE), 790-839 format 3.1 extras.
 public struct Profile: Sendable, Equatable {
     public let slot: Int
-    public private(set) var bytes: [UInt8]
+    public internal(set) var bytes: [UInt8]
 
     public static let size = 840
     static let keysOffset = 13

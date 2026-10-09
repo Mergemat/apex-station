@@ -49,6 +49,10 @@ struct SettingsSheet: View {
                             Task { await service.setSleep(minutes: m) }
                         }
                     }
+                    SettingRow(title: "Polling rate", detail: "How often the controller reports. Lower saves battery on wireless.") {
+                        ChipPicker(options: [DeviceSettings.ReportRate.hz125, .hz250, .hz500, .hz1000], selection: s.reportRate ?? .hz1000,
+                                   label: { "\($0.hertz)" }) { r in Task { await service.setReportRate(r) } }
+                    }
                     toggle(s, .quickProfileSwitch, "Fast Swap Config", "Fn + A, B, X or Y switches between the four profiles.")
                     toggle(s, .xboxHomeButton, "Home acts as Xbox button", "Sends the Xbox Guide button when you press Home.")
                     if s.available.contains(.screenOff) {

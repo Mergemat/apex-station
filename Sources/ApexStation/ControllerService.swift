@@ -51,6 +51,7 @@ final class ControllerService {
     func setSleep(minutes: Int) async { await apply(Flydigi.setSleep(minutes: minutes)) }
     func setPrecision(_ p: DeviceSettings.Precision) async { await apply(Flydigi.setPrecision(p)) }
     func setSensitivity(_ s: DeviceSettings.Sensitivity) async { await apply(Flydigi.setSensitivity(s)) }
+    func setReportRate(_ r: DeviceSettings.ReportRate) async { await apply(Flydigi.setReportRate(r)) }
 
     /// Writes a setting, then reads everything back so the UI shows what the controller actually stored.
     private func apply(_ frame: Data) async {
@@ -117,6 +118,44 @@ final class ControllerService {
 
     func setStick(_ config: StickConfig, left: Bool) async {
         await edit { $0.setStick(config, left: left) }
+    }
+
+    /// Stores `macro` on its button, replacing any macro that button had.
+    func setMacro(_ macro: Macro) async {
+        await edit { p in p.setMacros(p.macros.filter { $0.key != macro.key } + [macro]) }
+    }
+
+    func removeMacro(on key: FlydigiKey) async {
+        await edit { p in p.setMacros(p.macros.filter { $0.key != key }) }
+    }
+
+    /// Steps recorded so far, while recording a macro from the controller.
+    private(set) var recordedSteps: [Macro.Step]?
+    private var recordingTask: Task<Void, Never>?
+
+    func startRecording() {
+        guard live, recordingTask == nil else { return }
+        recordedSteps = []
+        recordingTask = Task { [channel] in
+            var recorder = MacroRecorder()
+            let start = ContinuousClock.now
+            func elapsed() -> Int { Int((ContinuousClock.now - start) / .milliseconds(1)) }
+            while !Task.isCancelled, !recorder.isFull {
+                recorder.add(channel.live.snapshot().state, at: elapsed())
+                if recorder.steps.count != recordedSteps?.count { recordedSteps = recorder.steps }
+                try? await Task.sleep(for: .milliseconds(2))
+            }
+            recordedSteps = recorder.finish(at: elapsed())
+        }
+    }
+
+    /// Stops recording and returns what was recorded.
+    func stopRecording() async -> [Macro.Step] {
+        recordingTask?.cancel()
+        await recordingTask?.value
+        recordingTask = nil
+        defer { recordedSteps = nil }
+        return recordedSteps ?? []
     }
 
     func setTurbo(_ key: FlydigiKey, _ turbo: (mode: TurboMode, speed: UInt8)?) async {

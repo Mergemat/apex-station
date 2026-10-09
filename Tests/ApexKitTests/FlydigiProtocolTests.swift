@@ -267,6 +267,32 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(p.name == "A very lon") // 10 characters fit
     }
 
+    @Test func realProfileHasNoMacros() throws {
+        let p = try #require(Profile(slot: 0, bytes: record))
+        #expect(p.macros.isEmpty)
+    }
+
+    @Test func macroEncodingMatchesSpaceStationsLayout() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        // M1 plays A down at 0 ms, up at 50 ms; M2 (toggle) plays B down at 0, up at 1000 ms.
+        p.setMacros([
+            Macro(key: .m1, mode: .once, steps: [.init(key: .a, press: true, time: 0), .init(key: .a, press: false, time: 50)]),
+            Macro(key: .m2, mode: .toggle, steps: [.init(key: .b, press: true, time: 0), .init(key: .b, press: false, time: 1000)]),
+        ])
+        // Worked out by hand from Space Station's encoder (5 macro slots, 10 ms ticks):
+        // count 2; offsets [0, 3, 0, 0, 0] (macro 2 starts after macro 1's header + 2 actions);
+        // M1 header 12 02 00 01, actions 00 00 04 01 / 05 00 04 00;
+        // M2 header 13 02 00 03, actions 00 00 05 01 / 64 00 05 00.
+        let expected = bytes("02 00 03 00 00 00 12 02 00 01 00 00 04 01 05 00 04 00 13 02 00 03 00 00 05 01 64 00 05 00")
+        #expect(Array(p.bytes[230..<(230 + expected.count)]) == expected)
+        #expect(p.bytes[230 + expected.count] == 0xFF)
+        #expect(p.mapping(for: .m1) == .macro && p.mapping(for: .m2) == .macro)
+        #expect(p.macros.count == 2 && p.macros[1].mode == .toggle && p.macros[1].steps.last?.time == 1000)
+        // Removing a macro hands the button back.
+        p.setMacros([p.macros[0]])
+        #expect(p.mapping(for: .m2) == .standard && p.macros.count == 1)
+    }
+
     @Test func readFrameMatchesSpaceStation() {
         // A3, len 4, slot 0, chunk size 20, sum 0xBB. This exact frame got the replies above.
         #expect([UInt8](Flydigi.readProfile(0))[0..<7] == [0x5A, 0xA5, 0xA3, 0x04, 0x00, 0x14, 0xBB])
@@ -311,5 +337,35 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
 
     @Test func resetFrame() {
         #expect([UInt8](Flydigi.resetProfile(2))[0..<6] == [0x5A, 0xA5, 0xAF, 0x03, 0x02, 0xB4])
+    }
+}
+
+struct MacroRecorderTests {
+    private func state(_ buttons: GamepadButtons, lt: UInt8 = 0) -> GamepadState {
+        var s = GamepadState()
+        s.buttons = buttons
+        s.leftTrigger = lt
+        return s
+    }
+
+    @Test func recordsPressesAndReleasesFromTheFirstPress() {
+        var r = MacroRecorder()
+        r.add(state([]), at: 500)
+        r.add(state([.a]), at: 1000)
+        r.add(state([.a, .x]), at: 1040)
+        r.add(state([.x], lt: 200), at: 1100)
+        r.add(state([]), at: 1250)
+        #expect(r.finish(at: 2000) == [
+            .init(key: .a, press: true, time: 0), .init(key: .x, press: true, time: 40),
+            .init(key: .a, press: false, time: 100), .init(key: .lt, press: true, time: 100),
+            .init(key: .x, press: false, time: 250), .init(key: .lt, press: false, time: 250),
+        ])
+    }
+
+    @Test func ignoresButtonsAGameNeverSeesAndReleasesHeldKeysAtTheEnd() {
+        var r = MacroRecorder()
+        r.add(state([.m1, .turbo]), at: 0)
+        r.add(state([.m1, .b]), at: 30)
+        #expect(r.finish(at: 90) == [.init(key: .b, press: true, time: 0), .init(key: .b, press: false, time: 60)])
     }
 }
