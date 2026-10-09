@@ -53,8 +53,6 @@ struct RootView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            // Leaves room for the window's traffic lights.
-            Color.clear.frame(width: 60, height: 1)
             HStack(spacing: 8) {
                 Image(systemName: "bolt.horizontal.fill").foregroundStyle(Theme.accent)
                 Text("APEX STATION").font(.system(size: 13, weight: .heavy)).tracking(3)
