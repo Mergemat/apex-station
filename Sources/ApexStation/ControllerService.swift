@@ -23,6 +23,8 @@ final class ControllerService {
     private(set) var settings: DeviceSettings?
     /// The controller's four on-board profiles, and which one is active.
     private(set) var profiles: [Profile] = []
+    /// Each profile's lighting, by slot.
+    private(set) var lighting: [Int: Lighting] = [:]
     private(set) var activeProfile: Int?
 
     @ObservationIgnored var started = false
@@ -64,11 +66,53 @@ final class ControllerService {
 
     /// The profile button changes go to: the one the controller is using.
     var editingProfile: Profile? { profiles.first { $0.slot == (activeProfile ?? 0) } }
+    var editingLighting: Lighting? { lighting[activeProfile ?? 0] }
     /// True while a profile write is in flight.
     private(set) var saving = false
 
     func remap(_ key: FlydigiKey, to mapping: KeyMapping) async {
         await edit { $0.setMapping(mapping, for: key) }
+    }
+
+    func setTrigger(_ t: TriggerConfig, left: Bool) async { await edit { $0.setTrigger(t, left: left) } }
+    func setVibration(_ v: VibrationConfig) async { await edit { $0.setVibration(v) } }
+    func setGyro(_ g: GyroConfig) async { await edit { $0.setGyro(g) } }
+
+    func rename(slot: Int, to name: String) async {
+        await edit(slot: slot) { $0.setName(name) }
+    }
+
+    /// Puts profile `slot` back to Flydigi's factory settings (backed up first like any change).
+    func resetProfile(_ slot: Int) async {
+        guard !saving else { return }
+        saving = true
+        defer { saving = false }
+        _ = try? await channel.request(Flydigi.resetProfile(slot), timeout: .seconds(2))
+        await reloadProfile(slot)
+        await reloadLighting(slot)
+    }
+
+    /// Applies `change` to the active profile's lighting and writes only what changed.
+    func editLighting(_ change: (inout Lighting) -> Void) async {
+        guard let old = editingLighting, !saving else { return }
+        var new = old
+        change(&new)
+        let frames = Flydigi.writeLighting(from: old, to: new)
+        guard !frames.isEmpty else { return }
+        saving = true
+        defer { saving = false }
+        for frame in frames {
+            do { _ = try await channel.request(frame, timeout: .seconds(1)) } catch { break }
+        }
+        await reloadLighting(old.slot)
+    }
+
+    private func reloadLighting(_ slot: Int) async {
+        let box = AssemblerBox(command: .readLighting)
+        guard (try? await channel.collect(Flydigi.readLighting(slot)) { box.add($0) }) != nil,
+              let r = box.result, let l = Lighting(slot: r.slot, bytes: r.bytes) else { return }
+        lighting[slot] = l
+        ProfileBackup.save(profiles, lighting: Array(lighting.values))
     }
 
     func setStick(_ config: StickConfig, left: Bool) async {
@@ -81,8 +125,9 @@ final class ControllerService {
 
     /// Applies `change` to the active profile, writes only what changed, then reads the profile
     /// back so the app shows what the controller actually stored.
-    private func edit(_ change: (inout Profile) -> Void) async {
-        guard let old = editingProfile, !saving else { return }
+    private func edit(slot: Int? = nil, _ change: (inout Profile) -> Void) async {
+        let target = slot ?? activeProfile ?? 0
+        guard let old = profiles.first(where: { $0.slot == target }), !saving else { return }
         var new = old
         change(&new)
         let frames = Flydigi.writeProfile(from: old, to: new)
@@ -103,7 +148,7 @@ final class ControllerService {
         guard (try? await channel.collect(Flydigi.readProfile(slot)) { box.add($0) }) != nil,
               let r = box.result, let p = Profile(slot: r.slot, bytes: r.bytes) else { return }
         profiles = profiles.map { $0.slot == slot ? p : $0 }
-        ProfileBackup.save(profiles)
+        ProfileBackup.save(profiles, lighting: Array(lighting.values))
     }
 
     /// Makes `slot` the active profile, like the controller's Fast Swap.
@@ -130,9 +175,14 @@ final class ControllerService {
                 continue
             }
             if let r = box.result, let p = Profile(slot: r.slot, bytes: r.bytes) { loaded.append(p) }
+            let lightBox = AssemblerBox(command: .readLighting)
+            if (try? await channel.collect(Flydigi.readLighting(slot)) { lightBox.add($0) }) != nil,
+               let r = lightBox.result, let l = Lighting(slot: r.slot, bytes: r.bytes) {
+                lighting[slot] = l
+            }
         }
         profiles = loaded
-        ProfileBackup.save(loaded)
+        ProfileBackup.save(loaded, lighting: Array(lighting.values))
     }
 
     func testRumble() async {
@@ -195,6 +245,7 @@ final class ControllerService {
                 info = nil
                 settings = nil
                 profiles = []
+                lighting = [:]
                 activeProfile = nil
                 fullControllerEnabled = nil
                 keepAlive?.cancel()
@@ -250,7 +301,8 @@ final class ControllerService {
 /// Collects a profile's chunks as they arrive on the channel's thread.
 private final class AssemblerBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var assembler = ProfileAssembler()
+    private var assembler: ProfileAssembler
+    init(command: Flydigi.Command = .readProfile) { assembler = ProfileAssembler(command: command) }
     private(set) var result: (slot: Int, bytes: [UInt8])?
 
     /// Returns true once the whole profile has arrived.
@@ -271,12 +323,14 @@ enum ProfileBackup {
             .appendingPathComponent("Apex Station/Backups", isDirectory: true)
     }
 
-    static func save(_ profiles: [Profile]) {
+    static func save(_ profiles: [Profile], lighting: [Lighting] = []) {
         guard !profiles.isEmpty else { return }
         let fm = FileManager.default
         let latest = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))?
             .filter(\.hasDirectoryPath).sorted { $0.lastPathComponent < $1.lastPathComponent }.last
-        if let latest, profiles.allSatisfy({ (try? Data(contentsOf: latest.appendingPathComponent("profile-\($0.slot).bin"))) == Data($0.bytes) }) {
+        if let latest,
+           profiles.allSatisfy({ (try? Data(contentsOf: latest.appendingPathComponent("profile-\($0.slot).bin"))) == Data($0.bytes) }),
+           lighting.allSatisfy({ (try? Data(contentsOf: latest.appendingPathComponent("lighting-\($0.slot).bin"))) == Data($0.bytes) }) {
             return
         }
         let stamp = ISO8601DateFormatter.string(from: .now, timeZone: .current, formatOptions: [.withFullDate, .withTime, .withDashSeparatorInDate])
@@ -284,9 +338,16 @@ enum ProfileBackup {
         do {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             for p in profiles { try Data(p.bytes).write(to: dir.appendingPathComponent("profile-\(p.slot).bin")) }
+            for l in lighting { try Data(l.bytes).write(to: dir.appendingPathComponent("lighting-\(l.slot).bin")) }
             Log.settings.notice("backed up \(profiles.count) profiles to \(dir.path, privacy: .public)")
         } catch {
             Log.settings.error("profile backup failed: \(error.localizedDescription, privacy: .public)")
         }
     }
+}
+
+extension Lighting {
+    /// Flydigi's default animation (12 LEDs × 10 frames), recorded from a factory profile, used
+    /// to switch a profile back to "Default" after a custom colour overwrote its frames.
+    static let factoryFrames = [UInt8](Data(base64Encoded: "AICAAICAAICAAHGOAGCfAEm2ACvUAAD/KgDVSQC2YACfcQCOALZJALZJALZJAJ9gAI5xAICAAHGOAGCfAEm2ACvUAAD/KgDVK9QAK9QAK9QAAP8AANUqALZJAJ9gAI5xAICAAHGOAGCfAEm2cY4AcY4AcY4AYJ8ASbYAK9QAAP8AANUqALZJAJ9gAI5xAICAn2AAn2AAn2AAjnEAgIAAcY4AYJ8ASbYAK9QAAP8AANUqALZJ/wAA/wAA/wAA1CoAtkkAn2AAjnEAgIAAcY4AYJ8ASbYAK9QAnwBgnwBgnwBgtgBJ1AAr/wAA1CoAtkkAn2AAjnEAgIAAcY4AcQCOcQCOcQCOgACAjgBxnwBgtgBJ1AAr/wAA1CoAtkkAn2AAKgDVKgDVKgDVSQC2YACfcQCOgACAjgBxnwBgtgBJ1AAr/wAAAEm2AEm2AEm2ACvUAAD/KgDVSQC2YACfcQCOgACAjgBxnwBg")!)
 }

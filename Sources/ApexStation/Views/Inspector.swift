@@ -1,4 +1,5 @@
 import ApexKit
+import AppKit
 import SwiftUI
 
 /// The panel that slides in next to the controller for whatever the user clicked.
@@ -37,6 +38,9 @@ struct Inspector: View {
         case .key(let k): k.name
         case .leftStick: "Left stick"
         case .rightStick: "Right stick"
+        case .lighting: "Lighting"
+        case .vibration: "Vibration"
+        case .gyro: "Gyro"
         }
     }
 
@@ -49,6 +53,7 @@ struct Inspector: View {
         case .key(.turbo), .key(.fn): "Controller key"
         case .key: "Button"
         case .leftStick, .rightStick: "Stick"
+        case .lighting, .vibration, .gyro: "Profile \((service.activeProfile ?? 0) + 1)"
         }
     }
 
@@ -58,12 +63,21 @@ struct Inspector: View {
             Note("Turbo is a controller shortcut: hold it and press another button to give that button turbo. The controller handles it itself, so it can't be remapped.")
         case .key(.fn):
             Note("Fn is a controller shortcut: with Fast Swap on, Fn plus A, B, X or Y switches between the four profiles. The controller handles it itself, so it can't be remapped.")
+        case .key(let key) where key == .lt || key == .rt:
+            ButtonPanel(key: key)
+            TriggerPanel(left: key == .lt)
         case .key(let key):
             ButtonPanel(key: key)
         case .leftStick:
             StickPanel(left: true)
         case .rightStick:
             StickPanel(left: false)
+        case .lighting:
+            LightingPanel()
+        case .vibration:
+            VibrationPanel()
+        case .gyro:
+            GyroPanel()
         }
     }
 }
@@ -350,4 +364,307 @@ private struct StickPlot: View {
     }
 
     private var point: CGPoint { CGPoint(x: Double(position.x) / 32767, y: Double(position.y) / 32767) }
+}
+
+// MARK: - Sliders
+
+/// A labelled slider that saves when the user lets go (not on every pixel of a drag).
+private struct ValueSlider: View {
+    let title: String
+    let range: ClosedRange<Double>
+    var unit = ""
+    let value: Int
+    let commit: (Int) -> Void
+    @ViewState private var current: Double = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Caption(title)
+            HStack {
+                // No step: macOS would draw a tick per step. Values are rounded instead.
+                Slider(value: Binding(get: { current }, set: { current = $0.rounded() }), in: range) { editing in
+                    if !editing { commit(Int(current)) }
+                }
+                Text("\(Int(current))\(unit)").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 44, alignment: .trailing)
+            }
+        }
+        .onAppear { current = Double(value) }
+        .onChange(of: value) { _, v in current = Double(v) }
+    }
+}
+
+// MARK: - Triggers
+
+private struct TriggerPanel: View {
+    @Environment(ControllerService.self) private var service
+    let left: Bool
+
+    private enum Mode: String, CaseIterable { case normal = "Normal", racing = "Racing", recoil = "Recoil", sniper = "Sniper", lock = "Lock", vibration = "Rumble" }
+
+    var body: some View {
+        if let t = service.editingProfile?.trigger(left: left) {
+            VStack(alignment: .leading, spacing: 14) {
+                ValueSlider(title: "Starts at", range: 0...200, unit: "", value: t.start) { v in save(t) { $0.start = v } }
+                ValueSlider(title: "Full press at", range: 55...255, unit: "", value: t.end) { v in save(t) { $0.end = v } }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Caption("Force feedback")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                    ForEach(Mode.allCases, id: \.self) { m in
+                        let on = mode(t.effect) == m
+                        Button { save(t) { $0.effect = effect(for: m) } } label: {
+                            Text(m.rawValue).font(.system(size: 12, weight: .semibold))
+                                .frame(maxWidth: .infinity, minHeight: 32)
+                                .foregroundStyle(on ? .white : Theme.secondary)
+                                .background(on ? Theme.accent : Color.white.opacity(0.06), in: .rect(cornerRadius: 9))
+                                .bloom(on, radius: 8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Text(describe(mode(t.effect))).font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+            }
+            effectSliders(t)
+        }
+    }
+
+    @ViewBuilder private func effectSliders(_ t: TriggerConfig) -> some View {
+        switch t.effect {
+        case .normal:
+            EmptyView()
+        case let .racing(start, damping):
+            ValueSlider(title: "Resistance starts at", range: 0...192, value: start) { v in save(t) { $0.effect = .racing(start: v, damping: damping) } }
+            ValueSlider(title: "Resistance", range: 1...255, value: damping) { v in save(t) { $0.effect = .racing(start: start, damping: v) } }
+        case let .recoil(start, startForce, strength, frequency):
+            ValueSlider(title: "Starts at", range: 0...192, value: start) { v in save(t) { $0.effect = .recoil(start: v, startForce: startForce, strength: strength, frequency: frequency) } }
+            ValueSlider(title: "Strength", range: 1...255, value: strength) { v in save(t) { $0.effect = .recoil(start: start, startForce: startForce, strength: v, frequency: frequency) } }
+            ValueSlider(title: "Rate", range: 1...255, value: frequency) { v in save(t) { $0.effect = .recoil(start: start, startForce: startForce, strength: strength, frequency: v) } }
+        case let .sniper(start, stroke, resistance):
+            ValueSlider(title: "Break point", range: 0...192, value: start) { v in save(t) { $0.effect = .sniper(start: v, stroke: stroke, resistance: resistance) } }
+            ValueSlider(title: "Travel", range: 1...255, value: stroke) { v in save(t) { $0.effect = .sniper(start: start, stroke: v, resistance: resistance) } }
+            ValueSlider(title: "Resistance", range: 1...255, value: resistance) { v in save(t) { $0.effect = .sniper(start: start, stroke: stroke, resistance: v) } }
+        case let .lock(position):
+            ValueSlider(title: "Stops at", range: 20...200, value: position) { v in save(t) { $0.effect = .lock(position: v) } }
+        case let .vibration(threshold, scale, start, frequency):
+            ValueSlider(title: "Strength", range: 0...200, value: scale) { v in save(t) { $0.effect = .vibration(threshold: threshold, scale: v, start: start, frequency: frequency) } }
+            ValueSlider(title: "Ignore rumble below", range: 1...255, value: threshold) { v in save(t) { $0.effect = .vibration(threshold: v, scale: scale, start: start, frequency: frequency) } }
+            ValueSlider(title: "Frequency", range: 1...255, value: frequency) { v in save(t) { $0.effect = .vibration(threshold: threshold, scale: scale, start: start, frequency: v) } }
+        }
+    }
+
+    private func save(_ t: TriggerConfig, _ change: (inout TriggerConfig) -> Void) {
+        var c = t
+        change(&c)
+        Task { await service.setTrigger(c, left: left) }
+    }
+
+    private func mode(_ e: TriggerEffect) -> Mode {
+        switch e {
+        case .normal: .normal
+        case .racing: .racing
+        case .recoil: .recoil
+        case .sniper: .sniper
+        case .lock: .lock
+        case .vibration: .vibration
+        }
+    }
+
+    private func effect(for m: Mode) -> TriggerEffect {
+        switch m {
+        case .normal: .normal
+        case .racing: .racingDefault
+        case .recoil: .recoilDefault
+        case .sniper: .sniperDefault
+        case .lock: .lockDefault
+        case .vibration: .vibrationDefault
+        }
+    }
+
+    private func describe(_ m: Mode) -> String {
+        switch m {
+        case .normal: "A plain trigger."
+        case .racing: "Pushes back like a pedal, from a point you choose."
+        case .recoil: "Buzzes rapidly past a point, like automatic fire."
+        case .sniper: "Clicks through at a break point, like a heavy trigger."
+        case .lock: "Stops the trigger partway, for faster presses."
+        case .vibration: "The trigger shakes along with the game's rumble."
+        }
+    }
+}
+
+// MARK: - Vibration
+
+private struct VibrationPanel: View {
+    @Environment(ControllerService.self) private var service
+
+    var body: some View {
+        if let v = service.editingProfile?.vibration {
+            SettingRow(title: "Rumble", detail: "Grip motors in games.") {
+                GlowToggle(isOn: Binding(get: { v.enabled }, set: { on in save(v) { $0.enabled = on } }))
+            }
+            if v.enabled {
+                ValueSlider(title: "Left motor (strong)", range: 0...100, unit: "%", value: v.left) { x in save(v) { $0.left = x } }
+                ValueSlider(title: "Right motor (fine)", range: 0...100, unit: "%", value: v.right) { x in save(v) { $0.right = x } }
+            }
+            Button { Task { await service.testRumble() } } label: {
+                Label("Test rumble", systemImage: "waveform").font(.system(size: 12.5, weight: .semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .glass(.capsule, tint: Theme.accent.opacity(0.35), interactive: true)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func save(_ v: VibrationConfig, _ change: (inout VibrationConfig) -> Void) {
+        var c = v
+        change(&c)
+        Task { await service.setVibration(c) }
+    }
+}
+
+// MARK: - Gyro
+
+private struct GyroPanel: View {
+    @Environment(ControllerService.self) private var service
+
+    var body: some View {
+        if let g = service.editingProfile?.gyro {
+            VStack(alignment: .leading, spacing: 10) {
+                Caption("Tilt moves")
+                ChipPicker(options: GyroConfig.Target.allCases, selection: g.target, label: targetLabel) { t in save(g) { $0.target = t } }
+            }
+            if g.target != .off {
+                if g.target != .mouse {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Caption("Turned on by")
+                        KeyPicker(selection: g.key) { k in save(g) { $0.key = k } }
+                        ChipPicker(options: GyroConfig.Activation.allCases, selection: g.activation, label: { $0 == .hold ? "While held" : "Toggle" }) { a in
+                            save(g) { $0.activation = a }
+                        }
+                    }
+                    ValueSlider(title: "Dead zone", range: 0...50, value: g.deadZone) { v in save(g) { $0.deadZone = v } }
+                }
+                ValueSlider(title: "Sensitivity", range: 1...100, value: g.sensitivity) { v in save(g) { $0.sensitivity = v } }
+                SettingRow(title: "Racing tilt", detail: "Steer by tilting instead of aiming.") {
+                    GlowToggle(isOn: Binding(get: { g.racing }, set: { on in save(g) { $0.racing = on } }))
+                }
+                Text("Gyro lowers the controller's report rate while it's on.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+            }
+        }
+    }
+
+    private func save(_ g: GyroConfig, _ change: (inout GyroConfig) -> Void) {
+        var c = g
+        change(&c)
+        Task { await service.setGyro(c) }
+    }
+
+    private func targetLabel(_ t: GyroConfig.Target) -> String {
+        switch t {
+        case .off: "Off"
+        case .leftStick: "Left stick"
+        case .rightStick: "Right stick"
+        case .mouse: "Mouse"
+        }
+    }
+}
+
+// MARK: - Lighting
+
+private struct LightingPanel: View {
+    @Environment(ControllerService.self) private var service
+    @ViewState private var picked = Color.blue
+
+    private static let swatches: [Lighting.Color] = [
+        .init(r: 0x3E, g: 0x85, b: 0xF6), .init(r: 0, g: 0xF0, b: 0xFF), .init(r: 0x9B, g: 0x5C, b: 0xFF), .init(r: 0xFF, g: 0x2D, b: 0x95),
+        .init(r: 0xFF, g: 0x3B, b: 0x30), .init(r: 0xFF, g: 0x95, b: 0x00), .init(r: 0x34, g: 0xC7, b: 0x59), .init(r: 0xFF, g: 0xFF, b: 0xFF),
+    ]
+
+    var body: some View {
+        if let l = service.editingLighting {
+            VStack(alignment: .leading, spacing: 10) {
+                Caption("Mode")
+                ChipPicker(options: [Lighting.Mode.standard, .steady, .breathing, .off], selection: l.mode, label: modeLabel) { m in
+                    Task {
+                        await service.editLighting { light in
+                            switch m {
+                            case .standard: light.setStandard(frames: Lighting.factoryFrames, loopEnd: 9)
+                            case .off: light.setOff()
+                            default: light.setColor(l.mode == .standard ? Self.swatches[0] : l.color, mode: m)
+                            }
+                        }
+                    }
+                }
+            }
+            if l.mode == .steady || l.mode == .breathing {
+                VStack(alignment: .leading, spacing: 10) {
+                    Caption("Colour")
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
+                        ForEach(Self.swatches, id: \.self) { c in
+                            let on = c == l.color
+                            Button { setColor(c, l) } label: {
+                                Circle().fill(Color(red: Double(c.r) / 255, green: Double(c.g) / 255, blue: Double(c.b) / 255))
+                                    .frame(width: 26, height: 26)
+                                    .overlay(Circle().strokeBorder(.white, lineWidth: on ? 2 : 0))
+                                    .shadow(color: Color(red: Double(c.r) / 255, green: Double(c.g) / 255, blue: Double(c.b) / 255).opacity(on ? 0.8 : 0), radius: 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    ColorPicker("Custom colour", selection: Binding(get: { picked }, set: { new in
+                        picked = new
+                        if let c = NSColor(new).usingColorSpace(.sRGB) {
+                            setColor(.init(r: UInt8(c.redComponent * 255), g: UInt8(c.greenComponent * 255), b: UInt8(c.blueComponent * 255)), l)
+                        }
+                    }), supportsOpacity: false)
+                    .font(.system(size: 12.5))
+                }
+            }
+            if l.mode != .off {
+                ValueSlider(title: "Brightness", range: 0...100, unit: "%", value: l.brightness) { v in Task { await service.editLighting { $0.setBrightness(v) } } }
+                if l.mode != .steady {
+                    ValueSlider(title: "Cycle time", range: 1...100, value: l.speed) { v in Task { await service.editLighting { $0.setSpeed(v) } } }
+                }
+            }
+        } else {
+            Text(service.connected ? "Reading the lighting…" : "Connect your Apex 5 to change its lighting.").foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private func setColor(_ c: Lighting.Color, _ l: Lighting) {
+        Task { await service.editLighting { $0.setColor(c, mode: l.mode == .breathing ? .breathing : .steady) } }
+    }
+
+    private func modeLabel(_ m: Lighting.Mode) -> String {
+        switch m {
+        case .standard: "Default"
+        case .steady: "Steady"
+        case .breathing: "Breathing"
+        case .off: "Off"
+        default: "\(m)"
+        }
+    }
+}
+
+/// Picks one button (for things like "gyro turns on with…").
+private struct KeyPicker: View {
+    let selection: FlydigiKey?
+    let pick: (FlydigiKey) -> Void
+    private let keys: [FlydigiKey] = [.lt, .rt, .lb, .rb, .l3, .r3, .a, .b, .x, .y, .lm, .rm, .m1, .m2, .m3, .m4]
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+            ForEach(keys, id: \.self) { k in
+                let on = k == selection
+                Button { pick(k) } label: {
+                    Text(k.name).font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .foregroundStyle(on ? .white : Theme.secondary)
+                        .background(on ? Theme.accent : Color.white.opacity(0.06), in: .rect(cornerRadius: 9))
+                        .bloom(on, radius: 8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 }

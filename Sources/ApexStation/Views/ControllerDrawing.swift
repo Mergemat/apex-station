@@ -205,15 +205,7 @@ struct ControllerDrawing: View {
 
     /// The light bar's path, measured from the photo.
     private func lightBar(_ ctx: inout GraphicsContext) {
-        let pts = [(0.1621, 0.5889), (0.2060, 0.5489), (0.2529, 0.5121), (0.2999, 0.4965), (0.3469, 0.4949),
-                   (0.5, 0.4945), (0.6528, 0.4949), (0.6998, 0.4965), (0.7468, 0.5121), (0.7937, 0.5489), (0.8379, 0.5889)]
-        var bar = Path()
-        bar.move(to: at(pts[0].0, pts[0].1))
-        for i in 1..<pts.count {
-            let a = at(pts[i - 1].0, pts[i - 1].1), c = at(pts[i].0, pts[i].1)
-            bar.addQuadCurve(to: CGPoint(x: (a.x + c.x) / 2, y: (a.y + c.y) / 2), control: a)
-        }
-        bar.addLine(to: at(pts.last!.0, pts.last!.1))
+        let bar = L.lightBar
         if live {
             var g = ctx
             g.addFilter(.blur(radius: 7))
@@ -385,6 +377,9 @@ enum ControllerControl: Hashable {
     case key(FlydigiKey)
     case leftStick
     case rightStick
+    case lighting
+    case vibration
+    case gyro
 
     /// Sticks are selected as a whole; their click (L3/R3) is configured from the stick panel.
     init(_ key: FlydigiKey) {
@@ -422,6 +417,20 @@ enum ControllerLayout {
     static let turbo = CGRect(x: 196, y: 476, width: 50, height: 22)
     static let fn = CGRect(x: 254, y: 476, width: 50, height: 22)
 
+    /// The light bar along the bottom of the body, measured from the photo.
+    static let lightBar: Path = {
+        let pts = [(0.1621, 0.5889), (0.2060, 0.5489), (0.2529, 0.5121), (0.2999, 0.4965), (0.3469, 0.4949),
+                   (0.5, 0.4945), (0.6528, 0.4949), (0.6998, 0.4965), (0.7468, 0.5121), (0.7937, 0.5489), (0.8379, 0.5889)]
+        var bar = Path()
+        bar.move(to: at(pts[0].0, pts[0].1))
+        for i in 1..<pts.count {
+            let a = at(pts[i - 1].0, pts[i - 1].1), c = at(pts[i].0, pts[i].1)
+            bar.addQuadCurve(to: CGPoint(x: (a.x + c.x) / 2, y: (a.y + c.y) / 2), control: a)
+        }
+        bar.addLine(to: at(pts.last!.0, pts.last!.1))
+        return bar
+    }()
+
     static func dpadRect(_ k: FlydigiKey) -> CGRect {
         let off = dpadGap + dpadKey / 2
         let c: CGPoint = switch k {
@@ -457,6 +466,7 @@ enum ControllerLayout {
             .key(.lb): ControllerDrawing.bumperRegion(left: true), .key(.rb): ControllerDrawing.bumperRegion(left: false),
         ]
         for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = Path(roundedRect: dpadRect(k), cornerRadius: 8) }
+        r[.lighting] = lightBar.strokedPath(.init(lineWidth: 14, lineCap: .round))
         return r
     }()
 }

@@ -10,6 +10,9 @@ struct RootView: View {
         switch name.lowercased() {
         case "leftstick": .leftStick
         case "rightstick": .rightStick
+        case "lighting": .lighting
+        case "gyro": .gyro
+        case "vibration": .vibration
         default: FlydigiKey.allCases.first { $0.name.lowercased() == name.lowercased() }.map { .key($0) }
         }
     }
@@ -88,7 +91,25 @@ struct RootView: View {
                     .pointerStyle(hovered == nil ? .default : .link)
             }
             .padding(28)
-            hint.padding(.bottom, 18)
+            HStack {
+                ForEach([(ControllerControl.vibration, "Vibration", "waveform"), (.gyro, "Gyro", "gyroscope"), (.lighting, "Lighting", "lightbulb.led")], id: \.1) { c, title, icon in
+                    let on = selected == c
+                    Button { selected = on ? nil : c } label: {
+                        Label(title, systemImage: icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(on ? .white : Theme.secondary)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(on ? Theme.accent : Color.white.opacity(0.06), in: .capsule)
+                            .overlay(Capsule().strokeBorder(on ? Theme.glow.opacity(0.6) : Theme.stroke))
+                            .bloom(on, radius: 8)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                hint
+            }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(.rect(cornerRadius: 28))
@@ -101,7 +122,7 @@ struct RootView: View {
         } else if service.fullControllerEnabled == false {
             "Turn on Full controller in settings to see live input"
         } else if selected == nil {
-            "Click any button to change what it does"
+            "Click any part of the controller to change it"
         } else {
             nil
         }
@@ -120,6 +141,9 @@ struct RootView: View {
 private struct ProfileSwitcher: View {
     @Environment(ControllerService.self) private var service
     @Namespace private var pill
+    @ViewState private var renaming: Int?
+    @ViewState private var resetting: Int?
+    @ViewState private var newName = ""
 
     var body: some View {
         HStack(spacing: 4) {
@@ -143,12 +167,27 @@ private struct ProfileSwitcher: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!service.connected)
+                .contextMenu {
+                    Button("Rename…") { renaming = slot; newName = profile.map(displayName) ?? "" }
+                    Button("Reset to factory settings…", role: .destructive) { resetting = slot }
+                }
                 .help(profile.map { "Profile \(slot + 1): \(displayName($0))" + ($0.remapped.isEmpty ? "" : " · \($0.remapped.count) remapped") } ?? "Profile \(slot + 1)")
             }
         }
         .padding(4)
         .glass(.capsule)
         .animation(.spring(duration: 0.3), value: service.activeProfile)
+        .alert("Rename profile", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name (up to 10 characters)", text: $newName)
+            Button("Save") { if let slot = renaming { Task { await service.rename(slot: slot, to: newName) } } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Reset profile \((resetting ?? 0) + 1)?", isPresented: Binding(get: { resetting != nil }, set: { if !$0 { resetting = nil } })) {
+            Button("Reset", role: .destructive) { if let slot = resetting { Task { await service.resetProfile(slot) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Its buttons, sticks, triggers and lighting go back to Flydigi's defaults. A backup is kept on your Mac.")
+        }
     }
 }
 

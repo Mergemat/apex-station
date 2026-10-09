@@ -277,3 +277,39 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(Flydigi.activeProfile(bytes("04 5a a5 a1 01 00 06 85 02")) == 2) // 4-7 mean the same slots
     }
 }
+
+@Suite struct LightingTests {
+    /// Profile 0's lighting from the user's Apex 5: factory animation, 12 LEDs, 10 frames.
+    let record = try! [UInt8](Data(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-lighting0", withExtension: "bin")!))
+
+    @Test func decodesTheRealLighting() throws {
+        let l = try #require(Lighting(slot: 0, bytes: record))
+        #expect(record.count == 380)
+        #expect(l.mode == .standard)
+        #expect(l.brightness == 52 && l.speed == 4)
+        #expect(l.ledCount == 12 && l.frameCount == 10)
+        #expect(l.color == Lighting.Color(r: 0, g: 0x80, b: 0x80))
+    }
+
+    @Test func steadyColorPaintsEveryLED() throws {
+        var l = try #require(Lighting(slot: 0, bytes: record))
+        l.setColor(.init(r: 255, g: 0, b: 40), mode: .steady)
+        #expect(l.mode == .steady && l.color == .init(r: 255, g: 0, b: 40))
+        #expect(stride(from: 20, to: 380, by: 3).allSatisfy { l.bytes[$0] == 255 && l.bytes[$0 + 1] == 0 && l.bytes[$0 + 2] == 40 })
+        #expect(Array(l.bytes[0..<3]) == Array(record[0..<3])) // header version untouched
+    }
+
+    @Test func lightingWriteUsesLightingCommands() throws {
+        let old = try #require(Lighting(slot: 2, bytes: record))
+        var new = old
+        new.setBrightness(80) // byte 6: chunk 0 only
+        let frames = Flydigi.writeLighting(from: old, to: new).map { [UInt8]($0) }
+        #expect(frames.count == 2)
+        #expect(frames[0][0..<8] == [0x5A, 0xA5, 0xA8, 0x06, 0x02, 0x00, 0x01, 0x14])
+        #expect(frames[1][2] == 0xA9 && frames[1][11] == 80) // chunk data starts at byte 5; brightness is its byte 6
+    }
+
+    @Test func resetFrame() {
+        #expect([UInt8](Flydigi.resetProfile(2))[0..<6] == [0x5A, 0xA5, 0xAF, 0x03, 0x02, 0xB4])
+    }
+}

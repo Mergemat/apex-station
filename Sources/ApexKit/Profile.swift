@@ -372,18 +372,20 @@ public struct Profile: Sendable, Equatable {
     }
 }
 
-/// Reassembles a profile from the controller's numbered `A3` reply chunks.
+/// Reassembles a record (profile or lighting) from the controller's numbered reply chunks.
 public struct ProfileAssembler: Sendable {
     public static let chunkSize: UInt8 = 20
+    private let command: UInt8
     private var chunks: [Int: [UInt8]] = [:]
     private var total = 0
 
-    public init() {}
+    /// `command` is the read command whose replies carry the chunks (`A3` profile, `A7` lighting).
+    public init(command: Flydigi.Command = .readProfile) { self.command = command.rawValue }
 
     /// Feeds one reply; returns the slot and full record once every chunk has arrived.
     public mutating func add(_ reply: some RandomAccessCollection<UInt8>) -> (slot: Int, bytes: [UInt8])? {
         let f = Flydigi.strip(reply)
-        guard f.count >= 6 + Int(Self.chunkSize), Flydigi.command(of: f) == Flydigi.Command.readProfile.rawValue else { return nil }
+        guard f.count >= 6 + Int(Self.chunkSize), Flydigi.command(of: f) == command else { return nil }
         total = Int(f[3])
         chunks[Int(f[4])] = Array(f[6..<(6 + Int(Self.chunkSize))])
         guard total > 0, chunks.count == total else { return nil }
@@ -408,24 +410,37 @@ extension Flydigi {
     /// like Space Station does.
     public static func writeProfile(from old: Profile, to new: Profile) -> [Data] {
         precondition(old.slot == new.slot)
+        return writeRecord(slot: new.slot, old: old.bytes, new: new.bytes, start: .writeProfileStart, chunk: .writeProfileChunk)
+    }
+
+    /// Diff-writes any chunked record: for each run of changed 20-byte chunks, a start frame
+    /// (slot, first chunk, chunk count, chunk size) and then the chunks (index within the run, data).
+    static func writeRecord(slot: Int, old: [UInt8], new: [UInt8], start: Command, chunk: Command) -> [Data] {
+        precondition(old.count == new.count)
         let size = Int(ProfileAssembler.chunkSize)
-        let count = Profile.size / size
-        let chunk = { (p: Profile, i: Int) in Array(p.bytes[(i * size)..<((i + 1) * size)]) }
+        let count = (new.count + size - 1) / size
+        let piece = { (b: [UInt8], i: Int) -> [UInt8] in
+            let lo = i * size, hi = min(b.count, lo + size)
+            return Array(b[lo..<hi]) + [UInt8](repeating: 0xFF, count: size - (hi - lo))
+        }
         var frames: [Data] = []
         var i = 0
         while i < count {
-            guard chunk(old, i) != chunk(new, i) else { i += 1; continue }
+            guard piece(old, i) != piece(new, i) else { i += 1; continue }
             var run: [[UInt8]] = []
-            let start = i
-            while i < count, chunk(old, i) != chunk(new, i) {
-                run.append(chunk(new, i))
+            let first = i
+            while i < count, piece(old, i) != piece(new, i) {
+                run.append(piece(new, i))
                 i += 1
             }
-            frames.append(frame(.writeProfileStart, [UInt8(new.slot), UInt8(start), UInt8(run.count), ProfileAssembler.chunkSize]))
-            for (n, data) in run.enumerated() { frames.append(frame(.writeProfileChunk, [UInt8(n)] + data)) }
+            frames.append(frame(start, [UInt8(slot), UInt8(first), UInt8(run.count), ProfileAssembler.chunkSize]))
+            for (n, data) in run.enumerated() { frames.append(frame(chunk, [UInt8(n)] + data)) }
         }
         return frames
     }
+
+    /// Resets profile `slot` to the controller's factory default.
+    public static func resetProfile(_ slot: Int) -> Data { frame(.resetProfile, [UInt8(slot)]) }
 
     /// The active profile slot from a `readProfileVersions` reply.
     public static func activeProfile(_ reply: some RandomAccessCollection<UInt8>) -> Int? {
