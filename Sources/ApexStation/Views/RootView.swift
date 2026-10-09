@@ -58,8 +58,6 @@ struct RootView: View {
                 Text("Apex Station").font(Theme.headingFont)
             }
             Spacer()
-            ProfileSwitcher()
-            Spacer()
             StatusBadge()
             Button { showingSettings = true } label: {
                 Image(systemName: "gearshape.fill")
@@ -70,6 +68,8 @@ struct RootView: View {
             .buttonStyle(.plain)
             .help("Controller and app settings")
         }
+        // Centred on the window, whatever the sides measure.
+        .overlay { ProfileSwitcher() }
     }
 
     // MARK: - Controller stage
@@ -157,6 +157,8 @@ private struct ProfileSwitcher: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            Text("Profile").font(Theme.buttonFont).foregroundStyle(Theme.label)
+                .padding(.leading, 12).padding(.trailing, 4)
             ForEach(0..<4, id: \.self) { slot in
                 let profile = service.profiles.first { $0.slot == slot }
                 let active = slot == service.activeProfile
