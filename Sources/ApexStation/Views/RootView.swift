@@ -45,6 +45,8 @@ struct RootView: View {
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showingSettings) { SettingsSheet() }
+        .onAppear { service.showingController(true) }
+        .onDisappear { service.showingController(false) }
     }
 
     // MARK: - Header
@@ -229,10 +231,11 @@ private struct StatusBadge: View {
 
     private var text: String {
         if service.saving { return "Saving…" }
-        if !service.connected && service.bluetooth { return service.live ? "Bluetooth · \(service.reportRate) Hz" : "Bluetooth" }
+        if !service.connected && service.bluetooth { return "Bluetooth · \(service.reportRate) Hz" }
         if !service.connected { return "No controller" }
         let wireless = service.info?.connection == .wireless
-        if service.live { return wireless ? "2.4 GHz · \(service.reportRate) Hz" : "\(service.reportRate) Hz" }
+        if service.live, service.measuresRate { return wireless ? "2.4 GHz · \(service.reportRate) Hz" : "\(service.reportRate) Hz" }
+        if service.live { return "Live" }
         return wireless ? "2.4 GHz receiver" : "Connected"
     }
 }

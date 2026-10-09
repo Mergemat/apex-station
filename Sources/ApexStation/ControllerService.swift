@@ -19,7 +19,14 @@ final class ControllerService {
     private(set) var fullControllerEnabled: Bool?
     private(set) var state = GamepadState()
     /// True while the live view holds the controller.
-    private(set) var live = false
+    /// The app has taken the controller over on the cable and gets its raw stream (paddles, gyro).
+    private(set) var held = false
+    /// The cable's standard Xbox interface is open (what games get, without a takeover).
+    private(set) var xinputOpen = false
+    /// Input is coming in: taken over, the cable's Xbox interface, or Bluetooth.
+    var live: Bool { held || (connected ? xinputOpen : bluetooth) }
+    /// Whether the report rate means something: the Xbox interface only reports on change.
+    var measuresRate: Bool { held || (!connected && bluetooth) }
     /// Input reports per second while live.
     private(set) var reportRate = 0
     /// Buttons going down and up, newest first, for the input test.
@@ -55,6 +62,7 @@ final class ControllerService {
     @ObservationIgnored var started = false
     @ObservationIgnored private let channel = SettingsChannel()
     @ObservationIgnored private let pad = BluetoothPad()
+    @ObservationIgnored private let xinput = XInputPipe()
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
     @ObservationIgnored private var profileWatch: Task<Void, Never>?
@@ -67,6 +75,7 @@ final class ControllerService {
         pad.start()
         Task { await watchChannel() }
         Task { await watchPad() }
+        Task { await watchXInput() }
         Task { await refreshUI() }
     }
 
@@ -486,14 +495,22 @@ final class ControllerService {
     }
 
     private func waitUntilLive() async {
-        for _ in 0..<50 where !live { try? await Task.sleep(for: .milliseconds(20)) }
+        for _ in 0..<50 where connected && !held { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
+    /// The main window shows the controller: read the cable's Xbox interface so the drawing is
+    /// live without a takeover. Closed, it's let go so Steam can use it.
+    func showingController(_ on: Bool) { xinput.setWanted(on) }
+
+    private func watchXInput() async {
+        for await open in xinput.eventStream {
+            xinputOpen = open
+            if !live { state = GamepadState() }
+        }
     }
 
     private func beginLive() {
-        if !connected, bluetooth {
-            live = true
-            return
-        }
+        if !connected, bluetooth { return }
         guard keepAlive == nil, connected, fullControllerEnabled == true else { return }
         keepAlive = Task {
             while !Task.isCancelled {
@@ -502,7 +519,7 @@ final class ControllerService {
                     continue
                 }
                 if let reply = try? await channel.request(Flydigi.acquire(true)) {
-                    live = Flydigi.acquireGranted(reply) ?? false
+                    held = Flydigi.acquireGranted(reply) ?? false
                 }
                 // Well inside the controller's ~15 s release timeout.
                 try? await Task.sleep(for: .seconds(5))
@@ -513,9 +530,9 @@ final class ControllerService {
     private func endLive() {
         keepAlive?.cancel()
         keepAlive = nil
-        guard connected, live else { return }
-        live = false
-        state = GamepadState()
+        guard connected, held else { return }
+        held = false
+        if !live { state = GamepadState() }
         Task { try? await channel.send(Flydigi.acquire(false)) }
     }
 
@@ -535,7 +552,7 @@ final class ControllerService {
             switch event {
             case .connected:
                 connected = true
-                live = false
+                held = false
                 state = GamepadState()
                 await loadInfo()
                 await loadStatus()
@@ -554,7 +571,7 @@ final class ControllerService {
                 fullControllerEnabled = nil
                 keepAlive?.cancel()
                 keepAlive = nil
-                live = bluetooth
+                held = false
                 state = GamepadState()
             }
         }
@@ -565,14 +582,10 @@ final class ControllerService {
             switch event {
             case .connected:
                 bluetooth = true
-                if !connected { live = true }
             case .disconnected:
                 bluetooth = false
                 bluetoothBattery = nil
-                if !connected {
-                    live = false
-                    state = GamepadState()
-                }
+                if !connected { state = GamepadState() }
             }
         }
     }
@@ -604,7 +617,9 @@ final class ControllerService {
         var pulseUntil: [UInt32: ContinuousClock.Instant] = [:]
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(16))
-            let current = connected || !bluetooth ? channel.live : pad.live
+            let current = held ? channel.live
+                : connected ? (xinputOpen ? xinput.live : channel.live)
+                : bluetooth ? pad.live : channel.live
             if current !== source {
                 source = current
                 lastCount = source.snapshot().count
@@ -614,7 +629,7 @@ final class ControllerService {
             if live, !changes.isEmpty { inputLog.add(changes, shown: logName) }
             var shown = snap.state
             // Over the cable the stream has the physical buttons; light what remapped ones act as too.
-            if connected, let profile = editingProfile { shown = shown.applyingRemaps(of: profile) }
+            if held, let profile = editingProfile { shown = shown.applyingRemaps(of: profile) }
             let now = ContinuousClock.now
             for key in [GamepadButtons.turbo, .fn] {
                 if snap.state.buttons.contains(key) { pulseUntil[key.rawValue] = now + .milliseconds(500) }

@@ -1,9 +1,8 @@
 import ApexKit
 import SwiftUI
 
-/// What the controller reports, as text: how steadily reports arrive, the raw stick, trigger and
-/// motion values, and a log of every button going down and up with what it acts as. Like Space
-/// Station's advanced test.
+/// The input test: a log of every button going down and up, and bars for the analog inputs the
+/// drawing can't show precisely. Like Space Station's advanced test.
 struct TestPanel: View {
     @Environment(ControllerService.self) private var service
 
@@ -16,43 +15,46 @@ struct TestPanel: View {
                     .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.glow)
             }
         }
-        VStack(alignment: .leading, spacing: 10) {
-            Caption("Reports")
-            HStack(spacing: 8) {
-                stat("\(service.reportRate)", "Hz")
-                stat(service.reportTiming.map { String(format: "%.2f", $0.average) } ?? "–", "ms avg")
-                stat(service.reportTiming.map { String(format: "%.1f", $0.longest) } ?? "–", "ms worst")
+        let s = service.state
+        VStack(alignment: .leading, spacing: 8) {
+            Caption("Triggers")
+            Meter(name: "LT", value: Double(s.leftTrigger) / 255, text: "\(s.leftTrigger)")
+            Meter(name: "RT", value: Double(s.rightTrigger) / 255, text: "\(s.rightTrigger)")
+        }
+        if let m = s.motion {
+            VStack(alignment: .leading, spacing: 8) {
+                Caption("Gyro °/s")
+                // 2000 °/s full scale; the bars show ±500.
+                ForEach(Array(zip(["X", "Y", "Z"], [m.gyro.x, m.gyro.y, m.gyro.z])), id: \.0) { axis, v in
+                    let dps = Double(v) * 2000 / 32768
+                    Meter(name: axis, value: dps / 500, text: String(format: "%.0f", dps), centred: true)
+                }
             }
-            Text(connection).font(.system(size: 11.5)).foregroundStyle(Theme.label)
         }
         VStack(alignment: .leading, spacing: 8) {
-            Caption("Now")
-            Text(now).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color.black.opacity(0.25), in: .rect(cornerRadius: 10))
-        }
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Caption("Log")
                 Spacer()
+                Text(reports).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.label)
                 Button("Clear") { service.clearInputLog() }
                     .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.secondary)
+                    .padding(.leading, 6)
             }
             log
         }
-        VStack(alignment: .leading, spacing: 10) {
-            Caption("Rumble")
-            HStack(spacing: 8) {
-                rumbleButton("Left", left: 255, right: 0)
-                rumbleButton("Right", left: 0, right: 255)
-                rumbleButton("Both", left: 255, right: 255)
-            }
-        }
     }
 
-    // MARK: Log
+    /// How steadily reports arrive: rate, average and worst gap.
+    private var reports: String {
+        guard let t = service.reportTiming else { return "" }
+        return String(format: "%d Hz · %.1f ms · worst %.1f", service.reportRate, t.average, t.longest)
+    }
+
+    private var liveHint: String {
+        if !service.connected && !service.bluetooth { return "Connect the controller to test it." }
+        if service.fullControllerEnabled == false { return "The test reads the controller's own input, which needs Full controller." }
+        return "Starting…"
+    }
 
     private var log: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -81,56 +83,34 @@ struct TestPanel: View {
         .padding(10)
         .background(Color.black.opacity(0.25), in: .rect(cornerRadius: 10))
     }
+}
 
-    // MARK: Raw values
+/// A labelled bar, filled from the left or, for signed values, from the middle.
+private struct Meter: View {
+    let name: String
+    /// 0...1, or -1...1 when centred.
+    let value: Double
+    let text: String
+    var centred = false
 
-    private var now: String {
-        let s = service.state
-        func stick(_ p: StickPosition) -> String { String(format: "%+6d %+6d", Int(p.x), Int(p.y)) }
-        var lines = [
-            "LS \(stick(s.leftStick))   RS \(stick(s.rightStick))",
-            String(format: "LT %3d   RT %3d", s.leftTrigger, s.rightTrigger),
-        ]
-        if let m = s.motion {
-            // 2000 °/s full scale; 4096 per g (about 1 g in total at rest).
-            let d = 2000.0 / 32768
-            lines.append(String(format: "gyro  %+6.0f %+6.0f %+6.0f °/s", Double(m.gyro.x) * d, Double(m.gyro.y) * d, Double(m.gyro.z) * d))
-            lines.append(String(format: "accel %+6.2f %+6.2f %+6.2f g", Double(m.accel.x) / 4096, Double(m.accel.y) / 4096, Double(m.accel.z) / 4096))
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(name).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.secondary).frame(width: 22, alignment: .leading)
+            GeometryReader { geo in
+                let w = geo.size.width, v = min(1, max(centred ? -1 : 0, value))
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.06))
+                    if centred {
+                        Capsule().fill(Theme.accent)
+                            .frame(width: max(3, abs(v) * w / 2))
+                            .offset(x: v >= 0 ? w / 2 : w / 2 - abs(v) * w / 2)
+                    } else {
+                        Capsule().fill(Theme.accent).frame(width: max(0, v * w))
+                    }
+                }
+            }
+            .frame(height: 8)
+            Text(text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.label).frame(width: 44, alignment: .trailing)
         }
-        return lines.joined(separator: "\n")
-    }
-
-    private var liveHint: String {
-        if !service.connected && !service.bluetooth { return "Connect the controller to test it." }
-        if service.fullControllerEnabled == false { return "The test reads the controller's own input, which needs Full controller." }
-        return "Starting…"
-    }
-
-    private var connection: String {
-        if !service.connected && service.bluetooth {
-            return "Bluetooth: shows what the controller sends after remapping. Paddles and gyro aren't reported."
-        }
-        let via = service.info?.connection == .wireless ? "2.4 GHz receiver" : "Cable"
-        return "\(via): remapped buttons show as the button they act as."
-    }
-
-    private func stat(_ value: String, _ unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
-            Text(unit).font(.system(size: 10.5)).foregroundStyle(Theme.label)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color.white.opacity(0.05), in: .rect(cornerRadius: 12))
-    }
-
-    private func rumbleButton(_ title: String, left: UInt8, right: UInt8) -> some View {
-        Button { Task { await service.rumble(left: left, right: right) } } label: {
-            Text(title).font(.system(size: 12.5, weight: .semibold))
-                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .glass(.capsule, interactive: true)
-        }
-        .buttonStyle(.plain)
-        .disabled(!service.connected && !service.bluetooth)
     }
 }
