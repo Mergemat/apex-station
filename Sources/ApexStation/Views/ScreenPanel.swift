@@ -41,9 +41,9 @@ struct ScreenPanel: View {
         if let s = service.settings {
             VStack(alignment: .leading, spacing: 14) {
                 Caption("Display")
-                if s.available.contains(.screenOff) {
-                    SettingRow(title: "Screen on", detail: "Off saves battery; the screen settings still apply.") {
-                        GlowToggle(isOn: Binding(get: { !s.enabled.contains(.screenOff) }, set: { on in Task { await service.set(.screenOff, !on) } }))
+                if s.available.contains(.screenAnimation) {
+                    SettingRow(title: "Animation", detail: "Off stops the animation; the controller's screen menus still work.") {
+                        GlowToggle(isOn: Binding(get: { s.enabled.contains(.screenAnimation) }, set: { on in Task { await service.set(.screenAnimation, on) } }))
                     }
                 }
                 if s.available.contains(.screenStatusBarAlwaysOn) {

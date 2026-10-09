@@ -14,7 +14,9 @@ public struct DeviceSettings: Sendable, Equatable {
         case stickAutoCalibration = 6
         case stickRebound = 7
         case screenStatusBarAlwaysOn = 8
-        case screenOff = 9
+        /// The screen plays its animation. Space Station calls it "offScreen" but its Animation
+        /// switch shows it as is: set means the animation is on.
+        case screenAnimation = 9
         case audio = 10
     }
 

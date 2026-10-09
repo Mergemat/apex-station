@@ -109,7 +109,7 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
 
 @Suite struct DeviceSettingsTests {
     /// The user's Apex 5 on 2026-10-09: precision 10-bit, sensitivity middle, sleep 15 min,
-    /// stick smoothing/auto-calibration/rebound and Xbox Home on, screen off.
+    /// stick smoothing/auto-calibration/rebound, Xbox Home and the screen animation on.
     let reply = bytes("04 5a a5 03 01 00 fb 72 01 01 0f 00 02 11 00 00")
 
     @Test func decodesRealSettings() throws {
@@ -118,9 +118,9 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(s.reportRate == nil)
         #expect(s.precision == .bits10)
         #expect(s.sensitivity == .middle)
-        #expect(s.enabled == [.xboxHomeButton, .stickSmoothing, .stickAutoCalibration, .stickRebound, .screenOff])
+        #expect(s.enabled == [.xboxHomeButton, .stickSmoothing, .stickAutoCalibration, .stickRebound, .screenAnimation])
         #expect(!s.available.contains(.motionSmoothing) && !s.available.contains(.audio))
-        #expect(s.available.contains(.screenOff) && s.available.contains(.quickProfileSwitch))
+        #expect(s.available.contains(.screenAnimation) && s.available.contains(.quickProfileSwitch))
     }
 
     @Test func switchFrameMatchesSpaceStationLayout() {
