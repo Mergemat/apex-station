@@ -10,6 +10,8 @@ struct ControllerDrawing: View {
     private static let space = CGSize(width: 500, height: 520)
     /// The outline is 500 wide and starts below the shoulder row.
     private static let bodyTop: CGFloat = 74
+    /// Mirrors left-side geometry onto the right side of the 500-wide drawing.
+    private static let mirror = CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 500, ty: 0)
 
     var body: some View {
         Canvas { ctx, size in
@@ -78,24 +80,40 @@ struct ControllerDrawing: View {
     /// A bumper is a strip of even thickness along the outline's top edge, over the hump
     /// (12-34 % of the width, measured), so it follows the controller's curve exactly.
     private func bumper(_ ctx: inout GraphicsContext, _ shell: Path, left: Bool, on: Bool) {
-        let thickness: CGFloat = 13
-        let span = left ? CGRect(x: 0.12 * 500, y: Self.bodyTop - 10, width: 0.22 * 500, height: 40)
-                        : CGRect(x: 0.66 * 500, y: Self.bodyTop - 10, width: 0.22 * 500, height: 40)
-        var strip = ctx
-        strip.clip(to: Path(roundedRect: span, cornerRadius: 12))
-        strip.clip(to: shell)
-        strip.clip(to: shell.applying(.init(translationX: 0, y: thickness)), options: .inverse)
+        let thickness: CGFloat = 20
+        // An oval over the shoulder (up to where the faceplate starts, ~33 % of the width) bounds the
+        // band, so its ends taper into the edge instead of stopping in a flat cut.
+        let oval = CGRect(x: 0.105 * 500, y: Self.bodyTop - 24, width: 0.225 * 500, height: 82)
+        let bound = Path(ellipseIn: left ? oval : oval.applying(Self.mirror))
+        let inner = shell.applying(.init(translationX: 0, y: thickness))
+
+        var band = ctx
+        band.clip(to: bound)
+        band.clip(to: shell)
+        band.clip(to: inner, options: .inverse)
+        let area = bound.boundingRect
         if on {
-            var g = strip
-            g.addFilter(.blur(radius: 6))
-            g.fill(Path(span), with: .color(Theme.accent))
+            var g = band
+            g.addFilter(.blur(radius: 8))
+            g.fill(Path(area), with: .color(Theme.accent))
         }
-        strip.fill(Path(span), with: on
-            ? .linearGradient(Gradient(colors: [Theme.glow, Theme.accent]), startPoint: span.origin,
-                              endPoint: CGPoint(x: span.maxX, y: span.maxY))
-            : .color(.white.opacity(0.16)))
-        label(&ctx, left ? "LB" : "RB", at: CGPoint(x: span.midX, y: Self.bodyTop + 22), size: 9.5,
-              color: on ? .white : .white.opacity(0.5))
+        band.fill(Path(area), with: on
+            ? .linearGradient(Gradient(colors: [Theme.glow, Theme.accent]), startPoint: CGPoint(x: area.minX, y: area.minY),
+                              endPoint: CGPoint(x: area.maxX, y: area.maxY))
+            : .linearGradient(Gradient(colors: [.white.opacity(0.22), .white.opacity(0.10)]),
+                              startPoint: CGPoint(x: area.midX, y: area.minY), endPoint: CGPoint(x: area.midX, y: area.maxY)))
+
+        // Defined edges: a highlight on the outer rim and a seam where the bumper meets the body.
+        var edges = ctx
+        edges.clip(to: bound)
+        edges.stroke(shell, with: .color(.white.opacity(on ? 0.7 : 0.45)), lineWidth: 1.4)
+        edges.clip(to: shell)
+        edges.stroke(inner, with: .color(on ? Theme.glow.opacity(0.8) : .black.opacity(0.35)), lineWidth: 1)
+
+        // The label sits inside the band, over the middle of the shoulder.
+        let mid = left ? at(0.235, 0) : at(0.765, 0)
+        label(&ctx, left ? "LB" : "RB", at: CGPoint(x: mid.x, y: Self.bodyTop + 0.011 * 500 + thickness / 2), size: 9.5,
+              color: on ? .white : .white.opacity(0.75))
     }
 
     private func faceplate(_ ctx: inout GraphicsContext) {
