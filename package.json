@@ -1,0 +1,9 @@
+{
+  "name": "apex-station",
+  "private": true,
+  "scripts": {
+    "test": "bun scripts/swift.ts test",
+    "build": "bun scripts/build.ts",
+    "install-app": "bun scripts/build.ts --install"
+  }
+}
