@@ -57,6 +57,7 @@ final class ControllerService {
     @ObservationIgnored private let pad = BluetoothPad()
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
+    @ObservationIgnored private var profileWatch: Task<Void, Never>?
     /// The keep-alive stays quiet while a screen upload has the channel.
     @ObservationIgnored private var uploadingScreen = false
 
@@ -541,7 +542,8 @@ final class ControllerService {
                 await loadSettings()
                 await loadProfiles()
                 if liveViewers > 0 { beginLive() }
-                Task { await watchActiveProfile() }
+                profileWatch?.cancel()
+                profileWatch = Task { await watchActiveProfile() }
             case .disconnected:
                 connected = false
                 info = nil
