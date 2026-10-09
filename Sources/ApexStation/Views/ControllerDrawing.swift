@@ -170,14 +170,11 @@ struct ControllerDrawing: View {
     /// The light bar along the arch between the grips: glows while the controller is live.
     private func lightBar(_ ctx: inout GraphicsContext) {
         guard live else { return }
-        // Inside the body only: the band's ends would spill past the grips.
-        var ctx = ctx
-        ctx.clip(to: L.body)
         var g = ctx
         g.addFilter(.blur(radius: 6))
         g.fill(L.lightBand, with: .color(Theme.accent.opacity(0.7)))
         ctx.fill(L.lightBand, with: .color(Theme.accent.opacity(0.35)))
-        ctx.fill(L.arch, with: .color(Theme.glow))
+        ctx.stroke(L.lightLine, with: .color(Theme.glow), style: StrokeStyle(lineWidth: 0.7, lineCap: .round))
     }
 
     /// The controller's own screen, showing which profile is active.
@@ -379,9 +376,10 @@ enum ControllerLayout {
     static let dpad = ControllerArt.dpadCenter
 
     static let lines: Path = ControllerArt.lines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
-    static let arch: Path = ControllerArt.arch.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
-    /// The light bar as one band along the arch, kept inside the body.
-    static let lightBand = Path(Path(polygon: ControllerArt.lightBand).cgPath.intersection(body.cgPath))
+    /// The light bar along the arch. Like the real one, it stops short of the grips' ends, about
+    /// 2.5 cm on the controller.
+    static let lightLine = Path(svg: ControllerArt.lightLine).trimmedPath(from: 0.15, to: 0.85)
+    static let lightBand = lightLine.strokedPath(StrokeStyle(lineWidth: 6.2, lineCap: .round))
     static let leftCap: Path = ControllerArt.leftCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
     static let rightCap: Path = ControllerArt.rightCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
 
