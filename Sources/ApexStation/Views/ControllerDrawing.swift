@@ -170,6 +170,9 @@ struct ControllerDrawing: View {
     /// The light bar along the arch between the grips: glows while the controller is live.
     private func lightBar(_ ctx: inout GraphicsContext) {
         guard live else { return }
+        // Inside the body only: the band's ends would spill past the grips.
+        var ctx = ctx
+        ctx.clip(to: L.body)
         var g = ctx
         g.addFilter(.blur(radius: 6))
         g.fill(L.lightBand, with: .color(Theme.accent.opacity(0.7)))
@@ -377,8 +380,8 @@ enum ControllerLayout {
 
     static let lines: Path = ControllerArt.lines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
     static let arch: Path = ControllerArt.arch.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
-    /// The light bar as one band along the arch.
-    static let lightBand = Path(polygon: ControllerArt.lightBand)
+    /// The light bar as one band along the arch, kept inside the body.
+    static let lightBand = Path(Path(polygon: ControllerArt.lightBand).cgPath.intersection(body.cgPath))
     static let leftCap: Path = ControllerArt.leftCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
     static let rightCap: Path = ControllerArt.rightCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
 
