@@ -224,11 +224,32 @@ final class LiveInput: @unchecked Sendable {
     private let lock = NSLock()
     private var state = GamepadState()
     private var count = 0
+    private var lastAt: UInt64?
+    /// Gaps between reports since `takeTiming()`, in nanoseconds.
+    private var gapSum: UInt64 = 0
+    private var gapMax: UInt64 = 0
+    private var gaps = 0
 
     func update(_ s: GamepadState) {
+        let now = DispatchTime.now().uptimeNanoseconds
         lock.lock(); defer { lock.unlock() }
         state = s
         count += 1
+        if let lastAt {
+            let gap = now - lastAt
+            gapSum += gap
+            gapMax = max(gapMax, gap)
+            gaps += 1
+        }
+        lastAt = now
+    }
+
+    /// Average and longest gap between reports (ms) since the last call, then starts over.
+    func takeTiming() -> (average: Double, longest: Double)? {
+        lock.lock(); defer { lock.unlock() }
+        defer { gapSum = 0; gapMax = 0; gaps = 0 }
+        guard gaps > 0 else { return nil }
+        return (Double(gapSum) / Double(gaps) / 1e6, Double(gapMax) / 1e6)
     }
 
     /// The latest state and how many reports have arrived in total.

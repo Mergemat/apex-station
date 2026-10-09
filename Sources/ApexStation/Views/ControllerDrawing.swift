@@ -411,6 +411,7 @@ enum ControllerControl: Hashable {
     case vibration
     case gyro
     case screen
+    case test
 
     /// Sticks are selected as a whole; their click (L3/R3) is configured from the stick panel.
     init(_ key: FlydigiKey) {

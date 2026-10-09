@@ -15,6 +15,7 @@ struct RootView: View {
         case "gyro": .gyro
         case "vibration": .vibration
         case "screen": .screen
+        case "test": .test
         default: FlydigiKey.allCases.first { $0.name.lowercased() == name.lowercased() }.map { .key($0) }
         }
     }
@@ -94,7 +95,8 @@ struct RootView: View {
             }
             .padding(28)
             HStack {
-                ForEach([(ControllerControl.vibration, "Vibration", "waveform"), (.gyro, "Gyro", "gyroscope"), (.lighting, "Lighting", "lightbulb.led")], id: \.1) { c, title, icon in
+                ForEach([(ControllerControl.vibration, "Vibration", "waveform"), (.gyro, "Gyro", "gyroscope"), (.lighting, "Lighting", "lightbulb.led"),
+                         (.test, "Test", "gamecontroller")], id: \.1) { c, title, icon in
                     let on = selected == c
                     Button { selected = on ? nil : c } label: {
                         Label(title, systemImage: icon)

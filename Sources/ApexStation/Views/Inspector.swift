@@ -25,7 +25,7 @@ struct Inspector: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    if !service.connected { Note(service.cableNote("this")) }
+                    if !service.connected, control != .test { Note(service.cableNote("this")) }
                     content
                 }
             }
@@ -45,6 +45,7 @@ struct Inspector: View {
         case .vibration: "Vibration"
         case .gyro: "Gyro"
         case .screen: "Screen"
+        case .test: "Input test"
         }
     }
 
@@ -59,6 +60,7 @@ struct Inspector: View {
         case .leftStick, .rightStick: "Stick"
         case .lighting, .vibration, .gyro: "Profile \((service.activeProfile ?? 0) + 1)"
         case .screen: "Display"
+        case .test: "Controller"
         }
     }
 
@@ -85,6 +87,8 @@ struct Inspector: View {
             GyroPanel()
         case .screen:
             ScreenPanel()
+        case .test:
+            TestPanel()
         }
     }
 }

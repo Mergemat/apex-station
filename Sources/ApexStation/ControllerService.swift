@@ -22,6 +22,8 @@ final class ControllerService {
     private(set) var live = false
     /// Input reports per second while live.
     private(set) var reportRate = 0
+    /// Average and longest gap between reports over the last second, in ms.
+    private(set) var reportTiming: (average: Double, longest: Double)?
     /// Settings stored on the controller.
     private(set) var settings: DeviceSettings?
     /// The controller's four on-board profiles, and which one is active.
@@ -303,6 +305,17 @@ final class ControllerService {
         ProfileBackup.save(loaded, lighting: Array(lighting.values))
     }
 
+    /// Runs the grip motors (0-255 each) for a moment, for the input test.
+    func rumble(left: UInt8, right: UInt8) async {
+        if !connected, bluetooth {
+            pad.rumble(strong: UInt8(Int(left) * 100 / 255), weak: UInt8(Int(right) * 100 / 255), duration: .milliseconds(400))
+            return
+        }
+        try? await channel.send(Flydigi.frame(.rumble, [left, right, 0, 0]))
+        try? await Task.sleep(for: .milliseconds(400))
+        try? await channel.send(Flydigi.frame(.rumble, [0, 0, 0, 0]))
+    }
+
     func testRumble() async {
         if !connected, bluetooth {
             pad.rumble(strong: 75, weak: 75, duration: .milliseconds(350))
@@ -555,6 +568,8 @@ final class ControllerService {
             if live, shown != state { state = shown }
             if ContinuousClock.now - lastRateAt >= .seconds(1) {
                 reportRate = live ? snap.count - lastCount : 0
+                let timing = source.takeTiming()
+                reportTiming = live ? timing : nil
                 if bluetoothBattery != pad.battery { bluetoothBattery = pad.battery }
                 lastCount = snap.count
                 lastRateAt = .now
