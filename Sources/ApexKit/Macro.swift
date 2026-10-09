@@ -140,8 +140,35 @@ extension FlydigiKey {
         case .view: .back
         case .menu: .start
         case .home: .guide
+        case .m1: .m1
+        case .m2: .m2
+        case .m3: .m3
+        case .m4: .m4
+        case .lm: .leftMacro
+        case .rm: .rightMacro
+        case .c: .c
+        case .z: .z
+        case .turbo: .turbo
+        case .fn: .fn
         default: nil
         }
+    }
+}
+
+extension GamepadState {
+    /// The state with every remapped button also pressing the button it acts as, the way a game
+    /// sees it (the controller's input stream only reports the buttons physically pressed).
+    public func applyingRemaps(of profile: Profile) -> GamepadState {
+        var s = self
+        for key in FlydigiKey.allCases where FlydigiKey.pressed(in: self, among: [key]).contains(key) {
+            guard case .button(let target) = profile.mapping(for: key) else { continue }
+            switch target {
+            case .lt: s.leftTrigger = 255
+            case .rt: s.rightTrigger = 255
+            default: if let b = target.liveButton { s.buttons.insert(b) }
+            }
+        }
+        return s
     }
 }
 

@@ -579,6 +579,8 @@ final class ControllerService {
             let changes = source.takeChanges()
             if live, !changes.isEmpty { inputLog.add(changes, shown: logName) }
             var shown = snap.state
+            // Over the cable the stream has the physical buttons; light what remapped ones act as too.
+            if connected, let profile = editingProfile { shown = shown.applyingRemaps(of: profile) }
             let now = ContinuousClock.now
             for key in [GamepadButtons.turbo, .fn] {
                 if snap.state.buttons.contains(key) { pulseUntil[key.rawValue] = now + .milliseconds(500) }

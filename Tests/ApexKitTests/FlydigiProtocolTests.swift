@@ -320,6 +320,18 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(p.mapping(for: .m2) == .standard && p.macros.count == 1)
     }
 
+    @Test func remappedPaddlesPressWhatTheyActAs() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setMapping(.button(.rb), for: .m3)
+        p.setMapping(.button(.rt), for: .m1)
+        var s = GamepadState()
+        s.buttons = [.m3, .m1]
+        let shown = s.applyingRemaps(of: p)
+        #expect(shown.buttons == [.m3, .m1, .rightBumper])
+        #expect(shown.rightTrigger == 255)
+        #expect(GamepadState().applyingRemaps(of: p) == GamepadState())
+    }
+
     @Test func macroLoopPausesFollowMacroOrder() throws {
         var p = try #require(Profile(slot: 0, bytes: record))
         let tap: [Macro.Step] = [.init(key: .a, press: true, time: 0), .init(key: .a, press: false, time: 50)]
