@@ -25,8 +25,8 @@ final class ControllerService {
     private(set) var xinputOpen = false
     /// Input is coming in: taken over, the cable's Xbox interface, or Bluetooth.
     var live: Bool { held || (connected ? xinputOpen : bluetooth) }
-    /// Whether the report rate means something: the Xbox interface only reports on change.
-    var measuresRate: Bool { held || (!connected && bluetooth) }
+    /// Whether the report rate means something (the 2.4 GHz receiver has no Xbox interface here).
+    var measuresRate: Bool { held || (connected ? xinputOpen : bluetooth) }
     /// Input reports per second while live.
     private(set) var reportRate = 0
     /// Buttons going down and up, newest first, for the input test.
