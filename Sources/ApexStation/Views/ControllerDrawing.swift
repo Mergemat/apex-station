@@ -216,8 +216,7 @@ struct ControllerDrawing: View {
         ctx.fill(p, with: .color(.black.opacity(0.18)))
         ctx.stroke(p, with: .color(.white.opacity(0.12)), lineWidth: 0.8)
         // The controller's own screen, showing which profile is active.
-        let screen = Path(roundedRect: CGRect(x: 0.419 * 500, y: Self.bodyTop + 0.156 * 500, width: 0.162 * 500, height: 0.078 * 500),
-                          cornerRadius: 4)
+        let screen = Path(roundedRect: L.screen, cornerRadius: 4)
         ctx.fill(screen, with: .linearGradient(Gradient(colors: [Color(red: 0.05, green: 0.08, blue: 0.16), Color(red: 0.02, green: 0.03, blue: 0.07)]),
                                                startPoint: CGPoint(x: 0, y: screen.boundingRect.minY), endPoint: CGPoint(x: 0, y: screen.boundingRect.maxY)))
         ctx.stroke(screen, with: .color(.white.opacity(0.14)), lineWidth: 0.8)
@@ -411,6 +410,7 @@ enum ControllerControl: Hashable {
     case lighting
     case vibration
     case gyro
+    case screen
 
     /// Sticks are selected as a whole; their click (L3/R3) is configured from the stick panel.
     init(_ key: FlydigiKey) {
@@ -426,6 +426,8 @@ enum ControllerControl: Hashable {
 enum ControllerLayout {
     static let bodyTop: CGFloat = 74
     static func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint { CGPoint(x: u * 500, y: bodyTop + v * 500) }
+    /// The controller's own 160×80 display.
+    static let screen = CGRect(x: 0.419 * 500, y: bodyTop + 0.156 * 500, width: 0.162 * 500, height: 0.078 * 500)
 
     static let lt = CGRect(x: 58, y: 18, width: 104, height: 26)
     static let rt = CGRect(x: 338, y: 18, width: 104, height: 26)
@@ -498,6 +500,7 @@ enum ControllerLayout {
         ]
         for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = Path(roundedRect: dpadRect(k), cornerRadius: 8) }
         r[.lighting] = lightBar.strokedPath(.init(lineWidth: 14, lineCap: .round))
+        r[.screen] = Path(roundedRect: screen, cornerRadius: 4)
         return r
     }()
 }

@@ -44,6 +44,7 @@ struct Inspector: View {
         case .lighting: "Lighting"
         case .vibration: "Vibration"
         case .gyro: "Gyro"
+        case .screen: "Screen"
         }
     }
 
@@ -57,6 +58,7 @@ struct Inspector: View {
         case .key: "Button"
         case .leftStick, .rightStick: "Stick"
         case .lighting, .vibration, .gyro: "Profile \((service.activeProfile ?? 0) + 1)"
+        case .screen: "Display"
         }
     }
 
@@ -81,6 +83,8 @@ struct Inspector: View {
             VibrationPanel()
         case .gyro:
             GyroPanel()
+        case .screen:
+            ScreenPanel()
         }
     }
 }

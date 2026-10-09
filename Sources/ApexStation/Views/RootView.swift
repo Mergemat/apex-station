@@ -13,6 +13,7 @@ struct RootView: View {
         case "lighting": .lighting
         case "gyro": .gyro
         case "vibration": .vibration
+        case "screen": .screen
         default: FlydigiKey.allCases.first { $0.name.lowercased() == name.lowercased() }.map { .key($0) }
         }
     }

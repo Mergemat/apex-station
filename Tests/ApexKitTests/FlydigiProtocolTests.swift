@@ -396,3 +396,46 @@ struct MacroRecorderTests {
         #expect(r.finish(at: 90) == [.init(key: .b, press: true, time: 0), .init(key: .b, press: false, time: 60)])
     }
 }
+
+@Suite struct ScreenTests {
+    private func solid(_ r: UInt8, _ g: UInt8, _ b: UInt8) -> [UInt8] {
+        [UInt8](repeating: 0, count: Screen.width * Screen.height).flatMap { _ in [r, g, b, 255] }
+    }
+
+    @Test func framesLookLikeFlydigisDefaultAnimation() {
+        // Every frame of Space Station's default_screen_image_128.bin starts 04 80 02 0A.
+        let f = Screen.frame(rgba: solid(255, 0, 0))
+        #expect(f.count == 25604)
+        #expect(Array(f[0..<4]) == [0x04, 0x80, 0x02, 0x0A])
+        #expect(Array(f[4..<6]) == [0xF8, 0x00]) // red, RGB565 high byte first
+        #expect(Array(Screen.frame(rgba: solid(0, 255, 0))[4..<6]) == [0x07, 0xE0])
+        #expect(Array(Screen.frame(rgba: solid(0, 0, 255))[4..<6]) == [0x00, 0x1F])
+    }
+
+    @Test func oneFrameUploadsAsStartChunksEndFinish() {
+        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))])
+        #expect(packets.count == 1 + 442 + 1 + 1)
+        // Start: still image (type 1), 1 frame, index sent as 2, size 0x6404; sum D0+09+01+01+01+02+64+04 = 0x46.
+        #expect(packets[0].bytes == [0xA5, 0xD0, 0x09, 0x01, 0x01, 0x01, 0x02, 0x00, 0x64, 0x04, 0x46, 0, 0, 0])
+        // Last chunk: offset 25578 = 0x63EA, 26 bytes of pixels then zeros.
+        let last = packets[442]
+        #expect(last.bytes.count == 95 && Array(last.bytes[0..<4]) == [0xA5, 0xD1, 0x63, 0xEA])
+        #expect(last.offset == 25578)
+        // Finish: its sum covers D3, 07, 01, count and 0x64 only = 0x40.
+        #expect(packets[444].bytes.prefix(9) == [0xA5, 0xD3, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x40])
+    }
+
+    @Test func chunkChecksumCoversCommandToEnd() {
+        let chunk = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(255, 255, 255))])[1]
+        // D1 + offset 0 + header 04 80 02 0A + 27 white pixels (FF FF) = 0xD1 + 0x90 + 54 × 0xFF.
+        #expect(chunk.bytes[94] == UInt8((0xD1 + 0x90 + 54 * 0xFF) & 0xFF))
+    }
+
+    @Test func acknowledgementsFollowSpaceStation() {
+        let packets = Screen.uploadPackets(frames: [Screen.frame(rgba: solid(0, 0, 0))])
+        #expect(Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD1, 0x00, 0x00, 0x63, 0xEA], packets[442]))
+        #expect(!Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD1, 0x00, 0x00, 0x00, 0x00], packets[442]))
+        #expect(!Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD2, 0x00, 0x01, 0x00, 0x00], packets[443]))
+        #expect(Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD0, 0x00, 0x05, 0x00, 0x00], packets[0]))
+    }
+}

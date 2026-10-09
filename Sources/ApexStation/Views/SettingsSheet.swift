@@ -66,12 +66,6 @@ struct SettingsSheet: View {
                     }
                     toggle(s, .quickProfileSwitch, "Fast Swap Config", "Fn + A, B, X or Y switches between the four profiles.")
                     toggle(s, .xboxHomeButton, "Home acts as Xbox button", "Sends the Xbox Guide button when you press Home.")
-                    if s.available.contains(.screenOff) {
-                        SettingRow(title: "Screen", detail: "The display on the controller.") {
-                            GlowToggle(isOn: Binding(get: { !s.enabled.contains(.screenOff) }, set: { on in Task { await service.set(.screenOff, !on) } }))
-                        }
-                    }
-                    toggle(s, .screenStatusBarAlwaysOn, "Status bar always on", "Otherwise a light press on Home shows it briefly.")
                 }
                 Button { Task { await service.testRumble() } } label: {
                     Label("Test rumble", systemImage: "waveform").frame(maxWidth: .infinity).padding(.vertical, 8)

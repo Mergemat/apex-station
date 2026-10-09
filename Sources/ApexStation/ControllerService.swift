@@ -38,6 +38,8 @@ final class ControllerService {
     @ObservationIgnored private let pad = BluetoothPad()
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
+    /// The keep-alive stays quiet while a screen upload has the channel.
+    @ObservationIgnored private var uploadingScreen = false
 
     func start() {
         channel.start()
@@ -280,6 +282,56 @@ final class ControllerService {
         try? await channel.send(Flydigi.frame(.rumble, [0, 0, 0, 0]))
     }
 
+    // MARK: - Screen
+
+    enum ScreenUpload: Equatable {
+        case sending(Double)
+        case done
+        case failed(String)
+    }
+
+    /// Progress of the last screen upload.
+    private(set) var screenUpload: ScreenUpload?
+
+    /// Flydigi's own animation for this controller, if it has been copied out of Space Station's
+    /// installer (scripts/screen-default.ts). It's their artwork, so the app doesn't ship it.
+    var defaultScreenFile: URL? {
+        guard let id = info?.deviceID else { return nil }
+        let url = ProfileBackup.folder.deletingLastPathComponent()
+            .appendingPathComponent("Screen/default_screen_image_\(id).bin")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Sends an animation (encoded frames) to the controller's screen. It shows after the
+    /// controller restarts.
+    func uploadScreen(_ frames: [[UInt8]]) async {
+        guard connected, !frames.isEmpty, !saving else { return }
+        let packets = Screen.uploadPackets(frames: Array(frames.prefix(Screen.maxFrames)))
+        saving = true
+        uploadingScreen = true
+        defer { saving = false; uploadingScreen = false }
+        screenUpload = .sending(0)
+        Log.settings.notice("screen upload: \(frames.count) frames, \(packets.count) packets")
+        for (i, packet) in packets.enumerated() {
+            var acked = false
+            for _ in 0..<3 where !acked {
+                acked = (try? await channel.exchange(packet.bytes, timeout: packet.timeout) { Screen.acknowledges($0, packet) }) != nil
+            }
+            guard acked else {
+                Log.settings.error("screen upload stopped at packet \(i) (command \(packet.command))")
+                screenUpload = .failed("The controller stopped answering. Slide the power switch on the back off and on, then try again.")
+                return
+            }
+            if i % 25 == 0 { screenUpload = .sending(Double(i) / Double(packets.count)) }
+        }
+        screenUpload = .done
+    }
+
+    func restoreDefaultScreen() async {
+        guard let url = defaultScreenFile, let data = try? Data(contentsOf: url) else { return }
+        await uploadScreen(Screen.frames(in: [UInt8](data)))
+    }
+
     // MARK: - Live view
 
     /// Views showing live input call this on appear/disappear; the controller is held while any are visible.
@@ -301,6 +353,10 @@ final class ControllerService {
         guard keepAlive == nil, connected, fullControllerEnabled == true else { return }
         keepAlive = Task {
             while !Task.isCancelled {
+                if uploadingScreen {
+                    try? await Task.sleep(for: .seconds(1))
+                    continue
+                }
                 if let reply = try? await channel.request(Flydigi.acquire(true)) {
                     live = Flydigi.acquireGranted(reply) ?? false
                 }
