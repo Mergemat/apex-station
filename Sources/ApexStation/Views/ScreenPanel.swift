@@ -4,31 +4,40 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The controller's 160×80 display: put your own picture or GIF on it, or Flydigi's animation
-/// back, and choose what it shows.
+/// The controller's 160×80 display: put your own picture or GIF on it (framed with the crop
+/// editor), or Flydigi's animation back, and choose what it shows.
 struct ScreenPanel: View {
     @Environment(ControllerService.self) private var service
-    @ViewState private var picked: PickedAnimation?
+    @ViewState private var source: SourceAnimation?
+    @ViewState private var crop = Crop()
+    @ViewState private var first = 0
+    @ViewState private var last = 0
+    /// Time per frame, in 100 ms steps (what the controller takes).
+    @ViewState private var period = 1
     @ViewState private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Caption("Animation")
-            preview
-            HStack(spacing: 8) {
-                Button { choose() } label: {
-                    Label(picked == nil ? "Choose picture or GIF" : "Choose another", systemImage: "photo")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
-                        .glass(.capsule, interactive: true)
-                }
-                .buttonStyle(.plain)
+            if let source {
+                CropEditor(source: source, crop: $crop, range: first...last, period: period)
+                cropControls(source)
+            } else {
+                placeholder
             }
+            Button { choose() } label: {
+                Label(source == nil ? "Choose picture or GIF" : "Choose another", systemImage: "photo")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .glass(.capsule, interactive: true)
+            }
+            .buttonStyle(.plain)
             if let problem { Text(problem).font(.system(size: 11.5)).foregroundStyle(.orange) }
-            if let picked {
-                Text("\(picked.name) · \(picked.frames.count) frame\(picked.frames.count == 1 ? "" : "s")\(picked.trimmed ? ", trimmed to \(Screen.maxFrames)" : "")")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.label)
-                uploadButton(title: "Put it on the controller") { await service.uploadScreen(picked.encoded) }
+            if let source {
+                uploadButton(title: "Put it on the controller") {
+                    let frames = (first...last).map { source.encoded(frame: $0, crop: crop) }
+                    await service.uploadScreen(frames, period: period)
+                }
             }
             status
         }
@@ -56,22 +65,36 @@ struct ScreenPanel: View {
         }
     }
 
-    // MARK: Preview
+    private var placeholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10).fill(Color.black)
+            Text("160 × 80").font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(Theme.label)
+        }
+        .aspectRatio(2, contentMode: .fit)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
+    }
 
-    private var preview: some View {
-        TimelineView(.animation(minimumInterval: 1 / 12, paused: (picked?.frames.count ?? 0) < 2)) { t in
-            ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(Color.black)
-                if let frames = picked?.frames, !frames.isEmpty {
-                    let i = Int(t.date.timeIntervalSinceReferenceDate * 12) % frames.count
-                    Image(decorative: frames[i], scale: 1).resizable().interpolation(.none)
-                } else {
-                    Text("Your picture here").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.label)
-                }
+    @ViewBuilder private func cropControls(_ source: SourceAnimation) -> some View {
+        HStack(spacing: 8) {
+            ChipPicker(options: [true, false], selection: crop.fills, label: { $0 ? "Fill" : "Fit" }) { fills in
+                crop = Crop(fills: fills)
             }
-            .aspectRatio(2, contentMode: .fit)
-            .clipShape(.rect(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
+            Spacer()
+            Text("Drag to move").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+        }
+        ValueSlider(title: "Zoom", range: 100...400, unit: "%", value: Int(crop.zoom * 100)) { v in crop.zoom = Double(v) / 100 }
+        if source.count > 1 {
+            ValueSlider(title: "First frame", range: 1...Double(source.count), value: first + 1) { v in
+                first = min(v - 1, last)
+                last = min(last, first + Screen.maxFrames - 1)
+            }
+            ValueSlider(title: "Last frame", range: 1...Double(source.count), value: last + 1) { v in
+                last = max(v - 1, first)
+                first = max(first, last - Screen.maxFrames + 1)
+            }
+            ValueSlider(title: "Frame time", range: 1...20, unit: "00 ms", value: period) { v in period = v }
+            Text("\(last - first + 1) of \(source.count) frames (up to \(Screen.maxFrames))")
+                .font(.system(size: 11.5)).foregroundStyle(Theme.label)
         }
     }
 
@@ -86,21 +109,17 @@ struct ScreenPanel: View {
             Note("Done. Press the power button on the back of the controller to restart it, and the new screen shows.")
         case .failed(let message)?:
             Text(message).font(.system(size: 11.5)).foregroundStyle(.orange)
-        case nil where service.connected && !viaReceiver:
-            Note("Uploading goes through Flydigi's 2.4 GHz receiver, like on Windows. Plug the receiver in and switch the controller to 2.4G mode.")
+        case nil where service.connected && viaReceiver:
+            Note("Uploading needs the USB-C cable; the 2.4 GHz receiver doesn't pass it on.")
         case nil:
-            Text("The controller plays frames at its own speed. Up to \(Screen.maxFrames) frames.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+            EmptyView()
         }
     }
 
-    /// Uploads go through Flydigi's 2.4 GHz receiver: Space Station sends them to the radio, in
-    /// 64-byte packets the cable's 32-byte settings interface can't carry, and over the cable the
-    /// controller ignores them.
     private var viaReceiver: Bool { service.info?.connection == .wireless }
 
     private func uploadButton(title: String, primary: Bool = true, action: @escaping () async -> Void) -> some View {
-        let enabled = service.connected && viaReceiver && !service.saving
+        let enabled = service.connected && !viaReceiver && !service.saving
         return Button { Task { await action() } } label: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
@@ -113,54 +132,79 @@ struct ScreenPanel: View {
         .disabled(!enabled)
     }
 
-    // MARK: Picking
-
     private func choose() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg, .gif, .heic, .webP, .bmp, .tiff]
-        panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if let animation = PickedAnimation(url: url) {
-            picked = animation
-            problem = nil
-        } else {
+        guard let animation = SourceAnimation(url: url) else {
             problem = "Couldn't read that image."
+            return
         }
+        source = animation
+        problem = nil
+        crop = Crop()
+        first = 0
+        last = min(animation.count, Screen.maxFrames) - 1
+        period = animation.period
     }
 }
 
-/// A picture or GIF scaled to fill the 160×80 screen (centred, cropped), ready to upload.
-struct PickedAnimation {
+/// How a picture is framed on the 160×80 screen: fill or fit, zoom on top of that, and an offset
+/// in screen pixels from centred.
+struct Crop: Equatable {
+    var fills = true
+    var zoom = 1.0
+    var offset = CGSize.zero
+
+    /// The image's size on the screen, in screen pixels.
+    func size(of image: CGSize) -> CGSize {
+        let w = CGFloat(Screen.width), h = CGFloat(Screen.height)
+        let base = fills ? max(w / image.width, h / image.height) : min(w / image.width, h / image.height)
+        return CGSize(width: image.width * base * zoom, height: image.height * base * zoom)
+    }
+
+    /// Where the image goes on the screen (y down), with the offset kept so the image can't be
+    /// dragged further than its own edge.
+    func rect(for image: CGSize) -> CGRect {
+        let s = size(of: image)
+        let w = CGFloat(Screen.width), h = CGFloat(Screen.height)
+        let maxX = abs(s.width - w) / 2, maxY = abs(s.height - h) / 2
+        let dx = min(max(offset.width, -maxX), maxX), dy = min(max(offset.height, -maxY), maxY)
+        return CGRect(x: (w - s.width) / 2 + dx, y: (h - s.height) / 2 + dy, width: s.width, height: s.height)
+    }
+}
+
+/// The chosen picture or GIF, with its frames and timing.
+struct SourceAnimation {
     let name: String
     let frames: [CGImage]
-    let encoded: [[UInt8]]
-    /// True when the GIF had more frames than the controller takes; every nth frame is kept.
-    let trimmed: Bool
+    /// Time per frame from the GIF, in 100 ms steps (1 for still pictures).
+    let period: Int
+
+    var count: Int { frames.count }
 
     init?(url: URL) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return nil }
-        let picks = count > Screen.maxFrames
-            ? (0..<Screen.maxFrames).map { $0 * count / Screen.maxFrames }
-            : Array(0..<count)
-        var frames: [CGImage] = [], encoded: [[UInt8]] = []
-        for i in picks {
-            guard let image = CGImageSourceCreateImageAtIndex(source, i, nil),
-                  let (frame, rgba) = Self.fill(image) else { continue }
-            frames.append(frame)
-            encoded.append(Screen.frame(rgba: rgba))
+        var frames: [CGImage] = [], delays: [Double] = []
+        for i in 0..<count {
+            guard let image = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            frames.append(image)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [CFString: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            if let d = (gif?[kCGImagePropertyGIFUnclampedDelayTime] ?? gif?[kCGImagePropertyGIFDelayTime]) as? Double, d > 0 { delays.append(d) }
         }
         guard !frames.isEmpty else { return nil }
         name = url.lastPathComponent
         self.frames = frames
-        self.encoded = encoded
-        trimmed = count > Screen.maxFrames
+        let average = delays.isEmpty ? 0.1 : delays.reduce(0, +) / Double(delays.count)
+        period = max(1, min(20, Int((average * 10).rounded())))
     }
 
-    /// Draws `image` over a black 160×80 canvas, scaled to cover it, and returns the canvas and its pixels.
-    private static func fill(_ image: CGImage) -> (CGImage, [UInt8])? {
+    /// Frame `i` drawn on a black 160×80 canvas as `crop` frames it.
+    func render(frame i: Int, crop: Crop) -> (image: CGImage, rgba: [UInt8])? {
         let w = Screen.width, h = Screen.height
+        let image = frames[i]
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
         let made = rgba.withUnsafeMutableBytes { buf -> CGImage? in
             guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
@@ -169,12 +213,54 @@ struct PickedAnimation {
             ctx.setFillColor(CGColor(gray: 0, alpha: 1))
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
             ctx.interpolationQuality = .high
-            let scale = max(CGFloat(w) / CGFloat(image.width), CGFloat(h) / CGFloat(image.height))
-            let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-            ctx.draw(image, in: CGRect(x: (CGFloat(w) - size.width) / 2, y: (CGFloat(h) - size.height) / 2, width: size.width, height: size.height))
+            let r = crop.rect(for: CGSize(width: image.width, height: image.height))
+            // CoreGraphics is y up.
+            ctx.draw(image, in: CGRect(x: r.minX, y: CGFloat(h) - r.maxY, width: r.width, height: r.height))
             return ctx.makeImage()
         }
-        guard let made else { return nil }
-        return (made, rgba)
+        return made.map { ($0, rgba) }
+    }
+
+    func encoded(frame i: Int, crop: Crop) -> [UInt8] {
+        Screen.frame(rgba: render(frame: i, crop: crop)?.rgba ?? [UInt8](repeating: 0, count: Screen.width * Screen.height * 4))
+    }
+}
+
+/// Frames the picture in the screen's exact 160×80 pixels, shown at a whole-number scale so what
+/// you see is what the controller gets. Drag to move; plays the chosen frames at the chosen speed.
+private struct CropEditor: View {
+    let source: SourceAnimation
+    @Binding var crop: Crop
+    let range: ClosedRange<Int>
+    let period: Int
+    @ViewState private var dragStart: CGSize?
+
+    var body: some View {
+        GeometryReader { geo in
+            let scale = max(1, floor(geo.size.width / CGFloat(Screen.width)))
+            TimelineView(.animation(minimumInterval: Double(period) / 10, paused: range.count < 2)) { t in
+                let i = range.lowerBound + Int(t.date.timeIntervalSinceReferenceDate * 10 / Double(period)) % range.count
+                if let frame = source.render(frame: i, crop: crop)?.image {
+                    Image(decorative: frame, scale: 1).resizable().interpolation(.none)
+                        .frame(width: CGFloat(Screen.width) * scale, height: CGFloat(Screen.height) * scale)
+                }
+            }
+            .frame(width: CGFloat(Screen.width) * scale, height: CGFloat(Screen.height) * scale)
+            .clipShape(.rect(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.stroke))
+            .frame(maxWidth: .infinity)
+            .contentShape(.rect)
+            .gesture(DragGesture()
+                .onChanged { g in
+                    let start = dragStart ?? crop.offset
+                    dragStart = start
+                    let s = crop.size(of: CGSize(width: source.frames[0].width, height: source.frames[0].height))
+                    let maxX = abs(s.width - CGFloat(Screen.width)) / 2, maxY = abs(s.height - CGFloat(Screen.height)) / 2
+                    crop.offset = CGSize(width: min(max(start.width + g.translation.width / scale, -maxX), maxX),
+                                         height: min(max(start.height + g.translation.height / scale, -maxY), maxY))
+                }
+                .onEnded { _ in dragStart = nil })
+        }
+        .aspectRatio(2, contentMode: .fit)
     }
 }
