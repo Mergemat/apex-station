@@ -145,7 +145,7 @@ private struct ButtonPanel: View {
                 TurboSection(key: key, turbo: profile.turbo(for: key))
             }
             if mode != .key {
-                Text("Saved to profile \(profile.slot + 1) on the controller, so it works everywhere: wired, wireless and Switch mode.")
+                Text("Saved to profile \(profile.slot + 1) on the controller. It applies over Bluetooth and in Switch mode; Steam and SDL games read the buttons themselves and skip it.")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
             }
         } else {
@@ -206,6 +206,7 @@ private struct StickPanel: View {
     var body: some View {
         let config = service.editingProfile?.stick(left: left)
         let position = left ? service.state.leftStick : service.state.rightStick
+        HoldsController()
         StickPlot(position: position, live: service.live,
                   deadZone: CGFloat(max(config?.deadZone ?? 0, 0)) / 100, edge: CGFloat(100 - max(config?.edge ?? 0, 0)) / 100)
         if let config { StickShape(config: config, left: left, position: position, live: service.live) }
@@ -723,6 +724,10 @@ private struct GyroPanel: View {
                         .font(.system(size: 11.5)).foregroundStyle(Theme.label)
                 }
                 ValueSlider(title: "Sensitivity", range: 1...100, value: g.sensitivity) { v in save(g) { $0.sensitivity = v } }
+                if g.target == .leftStick || g.target == .rightStick {
+                    Text("Works over Bluetooth and in Switch mode. Steam and SDL games read the gyro themselves; set it up in Steam Input there.")
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                }
                 if g.target == .mouse {
                     Text("Turning the controller moves the pointer, done by Apex Station like Space Station does on Windows.")
                         .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
@@ -833,24 +838,37 @@ private struct LightingPanel: View {
 }
 
 /// Picks one button (for things like "gyro turns on with…").
+/// Picks the button that turns gyro on by pressing it on the controller.
 private struct KeyPicker: View {
+    @Environment(ControllerService.self) private var service
     let selection: FlydigiKey?
     let pick: (FlydigiKey) -> Void
+    @ViewState private var waiting = false
     private let keys: [FlydigiKey] = [.lt, .rt, .lb, .rb, .l3, .r3, .a, .b, .x, .y, .lm, .rm, .m1, .m2, .m3, .m4]
 
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-            ForEach(keys, id: \.self) { k in
-                let on = k == selection
-                Button { pick(k) } label: {
-                    Text(k.name).font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                        .frame(maxWidth: .infinity, minHeight: 32)
-                        .foregroundStyle(on ? .white : Theme.secondary)
-                        .background(on ? Theme.accent : Color.white.opacity(0.06), in: .rect(cornerRadius: 9))
-                        .bloom(on, radius: 8)
+        HStack(spacing: 10) {
+            Text(waiting ? "Press a button…" : selection?.name ?? "Always on")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(waiting ? Theme.glow : .white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(Color.white.opacity(0.05), in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(waiting ? Theme.accent : Theme.stroke, lineWidth: waiting ? 1.5 : 1))
+            Button(waiting ? "Cancel" : "Record") {
+                if waiting { service.cancelListening(); return }
+                waiting = true
+                Task {
+                    if let key = await service.nextPress(among: keys) { pick(key) }
+                    waiting = false
                 }
-                .buttonStyle(.plain)
             }
+            .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
+            .padding(.horizontal, 12).padding(.vertical, 8).glass(.capsule, interactive: true)
+            .disabled(!service.canRead && !waiting)
+        }
+        if !service.canRead {
+            Text("Recording needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
         }
     }
 }

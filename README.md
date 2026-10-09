@@ -45,6 +45,12 @@ Turn on **Full controller** in the app's settings once. After that, Steam and an
 SDL see a real "Flydigi Apex 5", with back paddles, gyro, rumble and about 1000 Hz polling over
 the cable. The setting is stored on the controller.
 
+Those games take the controller over and read it raw, so its own remaps, gyro-to-stick, macros
+and turbo don't apply there (Space Station warns about the same on Windows). Set those up in
+Steam Input instead. The controller's own settings apply over **PC Bluetooth**, where it's a
+standard Xbox controller, and in Switch mode. Apex Station holds the controller only while you
+test inputs, edit a stick, record, or use keyboard and mouse.
+
 Games that use Apple's Game Controller framework don't recognise the Apex 5's PC mode. For those,
 switch the controller to **Switch → Wired** mode. macOS sees it as a Pro Controller, at about
 100 Hz.

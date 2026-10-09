@@ -45,8 +45,6 @@ struct RootView: View {
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showingSettings) { SettingsSheet() }
-        .onAppear { service.liveViewAppeared() }
-        .onDisappear { service.liveViewDisappeared() }
     }
 
     // MARK: - Header

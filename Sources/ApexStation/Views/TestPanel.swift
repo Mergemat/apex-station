@@ -8,6 +8,7 @@ struct TestPanel: View {
     @Environment(ControllerService.self) private var service
 
     var body: some View {
+        HoldsController()
         if !service.live {
             Note(liveHint)
             if service.connected, service.fullControllerEnabled == false {

@@ -217,3 +217,14 @@ struct FlowLayout: Layout {
         return rows
     }
 }
+
+/// Holds the controller while on screen, for views that need its live input. On the cable that
+/// pauses the controller's own remaps and gyro (see `ControllerService.hold`).
+struct HoldsController: View {
+    @Environment(ControllerService.self) private var service
+    var body: some View {
+        Color.clear.frame(height: 0)
+            .onAppear { service.hold() }
+            .onDisappear { service.release() }
+    }
+}

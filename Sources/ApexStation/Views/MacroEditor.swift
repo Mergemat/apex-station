@@ -42,15 +42,12 @@ struct MacroEditor: View {
             if recording {
                 recordingBanner
             } else if steps.isEmpty {
-                Note("Record the buttons you press on the controller, or add taps one by one.")
+                Note("Record the buttons you press on the controller.")
             } else {
                 stepList
             }
-            HStack(spacing: 8) {
-                recordButton
-                if !recording { addMenu }
-            }
-            if !service.live && !recording {
+            recordButton
+            if !service.canRead && !recording {
                 Text("Recording needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
             }
         }
@@ -128,25 +125,8 @@ struct MacroEditor: View {
                 .glass(.capsule, tint: recording ? Color.red.opacity(0.35) : nil, interactive: true)
         }
         .buttonStyle(.plain)
-        .disabled(!service.live && !recording)
-        .opacity(!service.live && !recording ? 0.4 : 1)
-    }
-
-    private var addMenu: some View {
-        Menu {
-            ForEach(FlydigiKey.macroTargets, id: \.self) { k in
-                Button(k.name) { addTap(k) }
-            }
-        } label: {
-            Label("Add tap", systemImage: "plus")
-                .font(.system(size: 12.5, weight: .semibold))
-                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .glass(.capsule, interactive: true)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .disabled(steps.count + 2 > Profile.maxMacroSteps)
+        .disabled(!service.canRead && !recording)
+        .opacity(!service.canRead && !recording ? 0.4 : 1)
     }
 
     // MARK: - Save
@@ -213,12 +193,6 @@ struct MacroEditor: View {
         } else {
             for j in i..<steps.count { steps[j].time -= removedGap }
         }
-        dirty = true
-    }
-
-    private func addTap(_ k: FlydigiKey) {
-        let start = steps.last.map { $0.time + 50 } ?? 0
-        steps += [.init(key: k, press: true, time: start), .init(key: k, press: false, time: start + 60)]
         dirty = true
     }
 

@@ -13,7 +13,7 @@ struct PressToAssign: View {
         VStack(alignment: .leading, spacing: 10) {
             card
             actions
-            if !service.live {
+            if !service.canRead {
                 Text("Assigning needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
             }
         }
@@ -67,8 +67,8 @@ struct PressToAssign: View {
                     .glass(.capsule, tint: waiting ? nil : Theme.accent.opacity(0.35), interactive: true)
             }
             .buttonStyle(.plain)
-            .disabled(!service.live && !waiting)
-            .opacity(!service.live && !waiting ? 0.4 : 1)
+            .disabled(!service.canRead && !waiting)
+            .opacity(!service.canRead && !waiting ? 0.4 : 1)
             if remapped && !waiting {
                 Button { Task { await service.remap(key, to: .standard) } } label: {
                     Label("Default", systemImage: "arrow.uturn.backward")

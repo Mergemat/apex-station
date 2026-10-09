@@ -47,7 +47,7 @@ struct SettingsSheet: View {
         Card(title: "Controller") {
             VStack(spacing: 16) {
                 if service.fullControllerEnabled != nil {
-                    SettingRow(title: "Full controller", detail: "Back paddles, gyro and 1000 Hz in Steam and SDL games, plus the live view here.") {
+                    SettingRow(title: "Full controller", detail: "Steam and SDL games read the controller directly: back paddles, gyro, 1000 Hz. They use their own settings then, so the controller's remaps, gyro-to-stick and macros apply only over Bluetooth or in Switch mode.") {
                         GlowToggle(isOn: Binding(get: { service.fullControllerEnabled ?? false }, set: { on in
                             busy = true
                             Task { await service.setFullController(on); busy = false }

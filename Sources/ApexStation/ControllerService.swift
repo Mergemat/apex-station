@@ -186,15 +186,25 @@ final class ControllerService {
     private(set) var recordedSteps: [Macro.Step]?
     private var recordingTask: Task<Void, Never>?
 
+    /// Whether the app can read the controller's input when it needs to: over the cable with
+    /// Full controller on, or over Bluetooth.
+    var canRead: Bool { connected ? fullControllerEnabled == true : bluetooth }
+
+    /// Where input comes from: the cable's stream, or Bluetooth.
+    private var inputSource: LiveInput { connected || !bluetooth ? channel.live : pad.live }
+
     func startRecording() {
-        guard live, connected, recordingTask == nil else { return }
+        guard canRead, recordingTask == nil else { return }
         recordedSteps = []
-        recordingTask = Task { [channel] in
+        hold()
+        let source = inputSource
+        recordingTask = Task {
+            await waitUntilLive()
             var recorder = MacroRecorder()
             let start = ContinuousClock.now
             func elapsed() -> Int { Int((ContinuousClock.now - start) / .milliseconds(1)) }
             while !Task.isCancelled, !recorder.isFull {
-                recorder.add(channel.live.snapshot().state, at: elapsed())
+                recorder.add(source.snapshot().state, at: elapsed())
                 if recorder.steps.count != recordedSteps?.count { recordedSteps = recorder.steps }
                 try? await Task.sleep(for: .milliseconds(2))
             }
@@ -206,6 +216,7 @@ final class ControllerService {
     func stopRecording() async -> [Macro.Step] {
         recordingTask?.cancel()
         await recordingTask?.value
+        if recordingTask != nil { release() }
         recordingTask = nil
         defer { recordedSteps = nil }
         return recordedSteps ?? []
@@ -215,18 +226,21 @@ final class ControllerService {
     private(set) var listening = false
     private var listenTask: Task<FlydigiKey?, Never>?
 
-    /// Waits for the next button press on the controller (up to 15 s) and returns it, or nil if
-    /// cancelled or nothing was pressed. Buttons already held when it starts don't count.
-    func nextPress() async -> FlydigiKey? {
-        guard live, connected else { return nil }
+    /// Waits for the next press of one of `targets` on the controller (up to 15 s) and returns
+    /// it, or nil if cancelled or nothing was pressed. Buttons already held when it starts don't count.
+    func nextPress(among targets: [FlydigiKey] = FlydigiKey.remapTargets) async -> FlydigiKey? {
+        guard canRead else { return nil }
         listenTask?.cancel()
-        let task = Task { [channel] () -> FlydigiKey? in
-            let targets = FlydigiKey.remapTargets
-            var held = FlydigiKey.pressed(in: channel.live.snapshot().state, among: targets)
+        hold()
+        defer { release() }
+        await waitUntilLive()
+        let source = inputSource
+        let task = Task { () -> FlydigiKey? in
+            var held = FlydigiKey.pressed(in: source.snapshot().state, among: targets)
             let deadline = ContinuousClock.now + .seconds(15)
             while !Task.isCancelled, ContinuousClock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(4))
-                let down = FlydigiKey.pressed(in: channel.live.snapshot().state, among: targets)
+                let down = FlydigiKey.pressed(in: source.snapshot().state, among: targets)
                 if let key = targets.first(where: { down.contains($0) && !held.contains($0) }) { return key }
                 held = down
             }
@@ -369,12 +383,12 @@ final class ControllerService {
         if on {
             if prompt { KeyboardMouseOutput.requestTrust() }
             // Holding the controller keeps its input coming while the window is closed.
-            liveViewAppeared()
+            hold()
             keyboardMouseTask = Task { await runKeyboardMouse() }
         } else {
             keyboardMouseTask?.cancel()
             keyboardMouseTask = nil
-            liveViewDisappeared()
+            release()
         }
     }
 
@@ -455,14 +469,23 @@ final class ControllerService {
     // MARK: - Live view
 
     /// Views showing live input call this on appear/disappear; the controller is held while any are visible.
-    func liveViewAppeared() {
+    /// Holds the controller so its own input stream comes in. On the cable this is a takeover:
+    /// while held, the controller skips its own remaps, gyro, macros and turbo (as with Steam or
+    /// any SDL game), so the app only holds it while something needs live input: the input test,
+    /// the stick panel, recording, waiting for a press, keyboard & mouse. Over Bluetooth nothing
+    /// is taken over and input is always live.
+    func hold() {
         liveViewers += 1
         if liveViewers == 1 { beginLive() }
     }
 
-    func liveViewDisappeared() {
+    func release() {
         liveViewers = max(0, liveViewers - 1)
         if liveViewers == 0 { endLive() }
+    }
+
+    private func waitUntilLive() async {
+        for _ in 0..<50 where !live { try? await Task.sleep(for: .milliseconds(20)) }
     }
 
     private func beginLive() {
@@ -480,8 +503,6 @@ final class ControllerService {
                 if let reply = try? await channel.request(Flydigi.acquire(true)) {
                     live = Flydigi.acquireGranted(reply) ?? false
                 }
-                // The controller can switch profiles itself (Fn + a face button), so keep up.
-                await loadActiveProfile()
                 // Well inside the controller's ~15 s release timeout.
                 try? await Task.sleep(for: .seconds(5))
             }
@@ -491,10 +512,19 @@ final class ControllerService {
     private func endLive() {
         keepAlive?.cancel()
         keepAlive = nil
-        guard live else { return }
+        guard connected, live else { return }
         live = false
         state = GamepadState()
-        if connected { Task { try? await channel.send(Flydigi.acquire(false)) } }
+        Task { try? await channel.send(Flydigi.acquire(false)) }
+    }
+
+    /// The controller can switch profiles itself (Fn + a face button), so keep up. Reading the
+    /// active profile doesn't take the controller over.
+    private func watchActiveProfile() async {
+        while connected, !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(5))
+            if connected, !uploadingScreen, !saving { await loadActiveProfile() }
+        }
     }
 
     // MARK: - Channel
@@ -504,11 +534,14 @@ final class ControllerService {
             switch event {
             case .connected:
                 connected = true
+                live = false
+                state = GamepadState()
                 await loadInfo()
                 await loadStatus()
                 await loadSettings()
                 await loadProfiles()
                 if liveViewers > 0 { beginLive() }
+                Task { await watchActiveProfile() }
             case .disconnected:
                 connected = false
                 info = nil
@@ -519,9 +552,8 @@ final class ControllerService {
                 fullControllerEnabled = nil
                 keepAlive?.cancel()
                 keepAlive = nil
-                live = false
+                live = bluetooth
                 state = GamepadState()
-                if liveViewers > 0 { beginLive() }
             }
         }
     }
@@ -531,7 +563,7 @@ final class ControllerService {
             switch event {
             case .connected:
                 bluetooth = true
-                if liveViewers > 0 { beginLive() }
+                if !connected { live = true }
             case .disconnected:
                 bluetooth = false
                 bluetoothBattery = nil
