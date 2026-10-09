@@ -113,6 +113,7 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(.rect(cornerRadius: 28))
+        .background(Theme.panelShade, in: .rect(cornerRadius: 28))
         .glass(.rect(cornerRadius: 28))
     }
 

@@ -6,7 +6,9 @@ enum Theme {
     /// Lighter blue for glows and highlights.
     static let glow = Color(red: 0x7F / 255, green: 0xB2 / 255, blue: 0xFF / 255)
 
-    static let background = Color(red: 0.027, green: 0.039, blue: 0.075)
+    static let background = Color(red: 0.010, green: 0.015, blue: 0.034)
+    /// Deep navy over the main glass panel so it reads darker without going black.
+    static let panelShade = Color(red: 0.03, green: 0.055, blue: 0.13).opacity(0.5)
     static let idle = Color.white.opacity(0.09)
     static let stroke = Color.white.opacity(0.10)
     static let label = Color.white.opacity(0.42)
@@ -40,7 +42,7 @@ struct AppBackground: View {
             Canvas { ctx, size in
                 ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.background))
                 let blobs: [(CGFloat, CGFloat, CGFloat, Double)] = [
-                    (0.18, 0.15, 0.55, 0.55), (0.85, 0.30, 0.45, 0.35), (0.55, 0.95, 0.60, 0.30),
+                    (0.18, 0.15, 0.55, 0.26), (0.85, 0.30, 0.45, 0.16), (0.55, 0.95, 0.60, 0.13),
                 ]
                 var g = ctx
                 g.addFilter(.blur(radius: 90))
