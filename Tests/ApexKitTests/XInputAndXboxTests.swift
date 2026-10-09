@@ -36,60 +36,65 @@ private func report(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { 
     }
 }
 
-@Suite struct XboxWirelessReportTests {
-    @Test func restingPadIsCentred() {
-        let r = [UInt8](XboxWirelessReport.encode(GamepadState()))
-        #expect(r.count == 17 && r[0] == 0x01)
-        #expect(r[1...8] == [0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80]) // 32768 each
-        #expect(r[13] == 0) // hat centred
-        #expect(r[14] == 0 && r[15] == 0)
-    }
-
-    @Test func stickYIsFlippedAndExtremesDoNotOverflow() {
+/// Reports from the Apex 5 in PC Bluetooth mode, where it shows up as an Xbox Wireless Controller.
+@Suite struct XboxBluetoothReportTests {
+    private func state(_ hex: String) throws -> GamepadState {
         var s = GamepadState()
-        s.leftStick.y = .max // full up in XInput
-        #expect([UInt8](XboxWirelessReport.encode(s))[3...4] == [0x01, 0x00]) // 1 = top in HID
-        s.leftStick.y = .min // full down; -Int16.min would overflow
-        #expect([UInt8](XboxWirelessReport.encode(s))[3...4] == [0xFF, 0xFF])
+        #expect(XboxBluetoothReport.apply(report(hex), to: &s))
+        return s
     }
 
-    @Test func buttonsUseXboxBluetoothUsageOrder() {
+    @Test func recordedRestingPadIsCentred() throws {
+        // Recorded from the controller lying on the desk.
+        let s = try state("01 00 80 ff 80 00 80 ff 80 00 00 00 00 00 00 00")
+        #expect(s.buttons.isEmpty)
+        #expect(s.leftStick == StickPosition(x: 0, y: -255))
+        #expect(s.rightStick == StickPosition(x: 0, y: -255))
+        #expect(s.leftTrigger == 0 && s.rightTrigger == 0)
+    }
+
+    @Test func sticksAreUpPositive() throws {
+        let s = try state("01 ff ff 00 00 00 00 ff ff 00 00 00 00 00 00 00")
+        #expect(s.leftStick == StickPosition(x: 32767, y: 32767))
+        #expect(s.rightStick == StickPosition(x: -32768, y: -32767))
+    }
+
+    @Test func triggersScaleTo255() throws {
+        let s = try state("01 00 80 00 80 00 80 00 80 ff 03 00 02 00 00 00")
+        #expect(s.leftTrigger == 255)
+        #expect(s.rightTrigger == 128)
+    }
+
+    @Test(arguments: [
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 00 01 00", GamepadButtons.a),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 00 04 00", .x),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 00 20 00", .rightBumper),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 00 80 00", .start),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 00 00 02", .rightStick),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 03 00 00", .dpadRight),
+        ("01 00 80 00 80 00 80 00 80 00 00 00 00 08 00 00", GamepadButtons([.dpadUp, .dpadLeft])),
+    ])
+    func buttons(hex: String, expected: GamepadButtons) throws {
+        #expect(try state(hex).buttons == expected)
+    }
+
+    @Test func xboxButtonComesSeparatelyAndSticks() throws {
         var s = GamepadState()
-        s.buttons = [.a, .guide]
-        let r = [UInt8](XboxWirelessReport.encode(s))
-        #expect(UInt16(r[14]) | UInt16(r[15]) << 8 == 0b100_0000_0001) // usage 1 and 11
+        _ = XboxBluetoothReport.apply([2, 1], to: &s)
+        _ = XboxBluetoothReport.apply(report("01 00 80 00 80 00 80 00 80 00 00 00 00 00 01 00"), to: &s)
+        #expect(s.buttons == [.guide, .a])
+        _ = XboxBluetoothReport.apply([2, 0], to: &s)
+        #expect(s.buttons == .a)
     }
 
-    static let hats: [(GamepadButtons, UInt8)] = [
-        (.dpadUp, 1), ([.dpadUp, .dpadRight], 2), (.dpadRight, 3), ([.dpadDown, .dpadRight], 4),
-        (.dpadDown, 5), ([.dpadDown, .dpadLeft], 6), (.dpadLeft, 7), ([.dpadUp, .dpadLeft], 8),
-        ([.dpadUp, .dpadDown], 0), ([], 0),
-    ]
-
-    @Test(arguments: hats)
-    func dpadBecomesHat(buttons: GamepadButtons, hat: UInt8) {
+    @Test func ignoresOtherReports() {
         var s = GamepadState()
-        s.buttons = buttons
-        #expect([UInt8](XboxWirelessReport.encode(s))[13] == hat)
+        #expect(!XboxBluetoothReport.apply([4, 200], to: &s))
+        #expect(XboxBluetoothReport.battery([4, 255]) == 100)
+        #expect(XboxBluetoothReport.battery([1, 255]) == nil)
     }
 
-    @Test func triggersScaleTo10Bits() {
-        var s = GamepadState()
-        s.leftTrigger = 255
-        s.rightTrigger = 128
-        let r = [UInt8](XboxWirelessReport.encode(s))
-        #expect(UInt16(r[9]) | UInt16(r[10]) << 8 == 1023)
-        #expect(UInt16(r[11]) | UInt16(r[12]) << 8 == 514)
-    }
-
-    @Test func rumbleAsSDLSendsIt() throws {
-        // SDL: enable 0x0F, LT 0, RT 0, strong 100, weak 50, duration 0xFF, delay 0, loop 0.
-        let r = try #require(XboxWirelessReport.decodeRumble([0x0F, 0, 0, 100, 50, 0xFF, 0, 0]))
-        #expect(r == .init(strong: 255, weak: 127, duration: nil))
-    }
-
-    @Test func rumbleRespectsEnableBitsAndDuration() throws {
-        let r = try #require(XboxWirelessReport.decodeRumble([0x03, 0x01, 0, 0, 100, 100, 30, 0, 1]))
-        #expect(r == .init(strong: 0, weak: 255, duration: .milliseconds(600))) // report ID stripped, 2 loops
+    @Test func rumbleReport() {
+        #expect(XboxBluetoothReport.rumble(strong: 30, weak: 120, duration: .milliseconds(350)) == [3, 3, 0, 0, 30, 100, 35, 0, 0])
     }
 }

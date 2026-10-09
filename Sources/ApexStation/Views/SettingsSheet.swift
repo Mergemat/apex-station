@@ -18,7 +18,18 @@ struct SettingsSheet: View {
             }
             ScrollView {
                 VStack(spacing: 16) {
-                    if service.connected { controller }
+                    if service.connected {
+                        controller
+                    } else if service.bluetooth {
+                        Card(title: "Controller") {
+                            Note(service.cableNote("its settings"))
+                            Button { Task { await service.testRumble() } } label: {
+                                Label("Test rumble", systemImage: "waveform").frame(maxWidth: .infinity).padding(.vertical, 8)
+                                    .glass(.capsule, tint: Theme.accent.opacity(0.35), interactive: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     app
                 }
             }

@@ -16,13 +16,14 @@ struct MenuBarContent: View {
             NSApp.activate()
         }
         Button("Test Rumble") { Task { await service.testRumble() } }
-            .disabled(!service.connected)
+            .disabled(!service.connected && !service.bluetooth)
         Divider()
         Button("Quit Apex Station") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 
     private var statusLine: String {
-        service.connected ? "\(service.info?.modelName ?? "Apex 5") connected" : "No controller"
+        service.connected ? "\(service.info?.modelName ?? "Apex 5") connected"
+            : service.bluetooth ? "Apex 5 on Bluetooth" : "No controller"
     }
 }

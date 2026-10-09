@@ -118,8 +118,10 @@ struct RootView: View {
     }
 
     @ViewBuilder private var hint: some View {
-        let text: String? = if !service.connected {
-            "Plug in your Apex 5 with the USB-C cable"
+        let text: String? = if !service.connected && service.bluetooth {
+            "Bluetooth shows the controller live. Use the cable to change settings"
+        } else if !service.connected {
+            "Plug in your Apex 5 with the USB-C cable, or pair it in PC Bluetooth mode"
         } else if service.fullControllerEnabled == false {
             "Turn on Full controller in settings to see live input"
         } else if selected == nil {
@@ -197,7 +199,12 @@ private struct StatusBadge: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if let info = service.info {
+            if !service.connected, let battery = service.bluetoothBattery {
+                Label("\(battery)%", systemImage: "battery.100percent")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+            } else if let info = service.info {
                 Label("\(info.batteryPercent)%", systemImage: info.charging == .onBattery ? "battery.100percent" : "battery.100percent.bolt")
                     .labelStyle(.titleAndIcon)
                     .font(.system(size: 12, weight: .medium))
@@ -205,7 +212,7 @@ private struct StatusBadge: View {
             }
             HStack(spacing: 6) {
                 Circle()
-                    .fill(service.live ? Theme.glow : service.connected ? Theme.accent : Color.white.opacity(0.25))
+                    .fill(service.live ? Theme.glow : service.connected || service.bluetooth ? Theme.accent : Color.white.opacity(0.25))
                     .frame(width: 7, height: 7)
                     .bloom(service.live, radius: 5)
                 Text(text).font(.system(size: 12, weight: .medium)).monospacedDigit().foregroundStyle(Theme.secondary)
@@ -218,6 +225,7 @@ private struct StatusBadge: View {
 
     private var text: String {
         if service.saving { return "Saving…" }
+        if !service.connected && service.bluetooth { return service.live ? "Bluetooth · \(service.reportRate) Hz" : "Bluetooth" }
         if !service.connected { return "No controller" }
         return service.live ? "\(service.reportRate) Hz" : "Connected"
     }

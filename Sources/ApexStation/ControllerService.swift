@@ -8,6 +8,9 @@ import Observation
 /// the Apex 5 itself. The app configures the controller and shows it live. While the live view is
 /// open the app holds the controller and reads its own input stream (paddles, gyro); the
 /// controller hands itself back ~15 s after we stop refreshing, so nothing stays stuck.
+///
+/// In PC Bluetooth mode the controller is a plain Xbox pad with no settings interface, so the
+/// app can only show it live and rumble it; changing anything needs the cable.
 @MainActor @Observable
 final class ControllerService {
     private(set) var connected = false
@@ -26,16 +29,29 @@ final class ControllerService {
     /// Each profile's lighting, by slot.
     private(set) var lighting: [Int: Lighting] = [:]
     private(set) var activeProfile: Int?
+    /// The controller is connected over Bluetooth (live view only).
+    private(set) var bluetooth = false
+    private(set) var bluetoothBattery: Int?
 
     @ObservationIgnored var started = false
     @ObservationIgnored private let channel = SettingsChannel()
+    @ObservationIgnored private let pad = BluetoothPad()
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
 
     func start() {
         channel.start()
+        pad.start()
         Task { await watchChannel() }
+        Task { await watchPad() }
         Task { await refreshUI() }
+    }
+
+    /// What to tell the user when something can't be changed right now.
+    func cableNote(_ what: String) -> String {
+        bluetooth
+            ? "Over Bluetooth the controller can't be changed. Connect it with the USB-C cable to change \(what); it keeps your changes when you go back to Bluetooth."
+            : "Connect your Apex 5 with the USB-C cable to change \(what)."
     }
 
     // MARK: - Settings
@@ -134,7 +150,7 @@ final class ControllerService {
     private var recordingTask: Task<Void, Never>?
 
     func startRecording() {
-        guard live, recordingTask == nil else { return }
+        guard live, connected, recordingTask == nil else { return }
         recordedSteps = []
         recordingTask = Task { [channel] in
             var recorder = MacroRecorder()
@@ -165,7 +181,7 @@ final class ControllerService {
     /// Waits for the next button press on the controller (up to 15 s) and returns it, or nil if
     /// cancelled or nothing was pressed. Buttons already held when it starts don't count.
     func nextPress() async -> FlydigiKey? {
-        guard live else { return nil }
+        guard live, connected else { return nil }
         listenTask?.cancel()
         let task = Task { [channel] () -> FlydigiKey? in
             let targets = FlydigiKey.remapTargets
@@ -255,6 +271,10 @@ final class ControllerService {
     }
 
     func testRumble() async {
+        if !connected, bluetooth {
+            pad.rumble(strong: 75, weak: 75, duration: .milliseconds(350))
+            return
+        }
         try? await channel.send(Flydigi.frame(.rumble, [0xC0, 0xC0, 0, 0]))
         try? await Task.sleep(for: .milliseconds(350))
         try? await channel.send(Flydigi.frame(.rumble, [0, 0, 0, 0]))
@@ -274,6 +294,10 @@ final class ControllerService {
     }
 
     private func beginLive() {
+        if !connected, bluetooth {
+            live = true
+            return
+        }
         guard keepAlive == nil, connected, fullControllerEnabled == true else { return }
         keepAlive = Task {
             while !Task.isCancelled {
@@ -294,7 +318,7 @@ final class ControllerService {
         guard live else { return }
         live = false
         state = GamepadState()
-        Task { try? await channel.send(Flydigi.acquire(false)) }
+        if connected { Task { try? await channel.send(Flydigi.acquire(false)) } }
     }
 
     // MARK: - Channel
@@ -321,6 +345,24 @@ final class ControllerService {
                 keepAlive = nil
                 live = false
                 state = GamepadState()
+                if liveViewers > 0 { beginLive() }
+            }
+        }
+    }
+
+    private func watchPad() async {
+        for await event in pad.eventStream {
+            switch event {
+            case .connected:
+                bluetooth = true
+                if liveViewers > 0 { beginLive() }
+            case .disconnected:
+                bluetooth = false
+                bluetoothBattery = nil
+                if !connected {
+                    live = false
+                    state = GamepadState()
+                }
             }
         }
     }
@@ -343,14 +385,21 @@ final class ControllerService {
 
     /// Redraw at display rate, not at the controller's ~1000 Hz.
     private func refreshUI() async {
-        var lastCount = channel.live.snapshot().count
+        // Input comes from the cable's stream when there is one, otherwise from Bluetooth.
+        var source = channel.live
+        var lastCount = source.snapshot().count
         var lastRateAt = ContinuousClock.now
         // Turbo and Fn are combo keys: the controller only reports them as a brief pulse when
         // they're released on their own, so their highlight is held long enough to see.
         var pulseUntil: [UInt32: ContinuousClock.Instant] = [:]
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(16))
-            let snap = channel.live.snapshot()
+            let current = connected || !bluetooth ? channel.live : pad.live
+            if current !== source {
+                source = current
+                lastCount = source.snapshot().count
+            }
+            let snap = source.snapshot()
             var shown = snap.state
             let now = ContinuousClock.now
             for key in [GamepadButtons.turbo, .fn] {
@@ -360,6 +409,7 @@ final class ControllerService {
             if live, shown != state { state = shown }
             if ContinuousClock.now - lastRateAt >= .seconds(1) {
                 reportRate = live ? snap.count - lastCount : 0
+                if bluetoothBattery != pad.battery { bluetoothBattery = pad.battery }
                 lastCount = snap.count
                 lastRateAt = .now
             }

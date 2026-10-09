@@ -24,7 +24,10 @@ struct Inspector: View {
                 .buttonStyle(.plain)
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) { content }
+                VStack(alignment: .leading, spacing: 22) {
+                    if !service.connected { Note(service.cableNote("this")) }
+                    content
+                }
             }
             .scrollIndicators(.never)
         }
@@ -128,7 +131,7 @@ private struct ButtonPanel: View {
             Text("Saved to profile \(profile.slot + 1) on the controller, so it works everywhere: wired, wireless and Switch mode.")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
         } else {
-            Note(service.connected ? "Reading the controller's profiles…" : "Connect your Apex 5 to change its buttons.")
+            if service.connected { Note("Reading the controller's profiles…") }
         }
     }
 }
@@ -596,7 +599,7 @@ private struct LightingPanel: View {
                 }
             }
         } else {
-            Text(service.connected ? "Reading the lighting…" : "Connect your Apex 5 to change its lighting.").foregroundStyle(Theme.secondary)
+            if service.connected { Text("Reading the lighting…").foregroundStyle(Theme.secondary) }
         }
     }
 
