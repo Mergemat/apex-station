@@ -169,7 +169,8 @@ struct ControllerDrawing: View {
         guard live else { return }
         var g = ctx
         g.addFilter(.blur(radius: 6))
-        g.stroke(L.arch, with: .color(Theme.accent), lineWidth: 5)
+        g.fill(L.lightBand, with: .color(Theme.accent.opacity(0.7)))
+        ctx.fill(L.lightBand, with: .color(Theme.accent.opacity(0.35)))
         ctx.fill(L.arch, with: .color(Theme.glow))
     }
 
@@ -369,6 +370,8 @@ enum ControllerLayout {
 
     static let lines: Path = ControllerArt.lines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
     static let arch: Path = ControllerArt.arch.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
+    /// The light bar as one band along the arch.
+    static let lightBand = Path(polygon: ControllerArt.lightBand)
     static let leftCap: Path = ControllerArt.leftCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
     static let rightCap: Path = ControllerArt.rightCapLines.reduce(into: Path()) { $0.addPath(Path(svg: $1)) }
 
@@ -428,7 +431,7 @@ enum ControllerLayout {
             .screen: Path(roundedRect: screen, cornerRadius: 3),
         ]
         for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = dpadArm(k) }
-        r[.lighting] = arch.strokedPath(.init(lineWidth: 12, lineCap: .round))
+        r[.lighting] = lightBand
         return r
     }()
 }
