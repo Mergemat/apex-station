@@ -42,6 +42,7 @@ final class ControllerService {
     @ObservationIgnored private var uploadingScreen = false
 
     func start() {
+        if UserDefaults.standard.bool(forKey: "keyboardMouse") { setKeyboardMouse(true, prompt: false) }
         channel.start()
         pad.start()
         Task { await watchChannel() }
@@ -295,6 +296,65 @@ final class ControllerService {
         try? await channel.send(Flydigi.frame(.rumble, [0, 0, 0, 0]))
     }
 
+    // MARK: - Keyboard & mouse
+
+    /// Whether buttons, sticks and gyro type and move the pointer (as mapped per profile).
+    private(set) var keyboardMouseOn = false
+    /// Mappings by profile slot, kept on this Mac like Space Station keeps them on the PC.
+    private(set) var keyboardMouseMaps: [Int: KeyboardMouseMap] = KeyboardMouseStore.load()
+    @ObservationIgnored private var keyboardMouseTask: Task<Void, Never>?
+
+    var keyboardMouseMap: KeyboardMouseMap { keyboardMouseMaps[activeProfile ?? 0] ?? KeyboardMouseMap() }
+
+    func editKeyboardMouse(_ change: (inout KeyboardMouseMap) -> Void) {
+        var map = keyboardMouseMap
+        change(&map)
+        keyboardMouseMaps[activeProfile ?? 0] = map
+        KeyboardMouseStore.save(keyboardMouseMaps)
+    }
+
+    /// `prompt` shows macOS's Accessibility prompt when permission is missing; it's off when
+    /// the app restores the setting at launch.
+    func setKeyboardMouse(_ on: Bool, prompt: Bool = true) {
+        guard on != keyboardMouseOn else { return }
+        keyboardMouseOn = on
+        UserDefaults.standard.set(on, forKey: "keyboardMouse")
+        if on {
+            if prompt { KeyboardMouseOutput.requestTrust() }
+            // Holding the controller keeps its input coming while the window is closed.
+            liveViewAppeared()
+            keyboardMouseTask = Task { await runKeyboardMouse() }
+        } else {
+            keyboardMouseTask?.cancel()
+            keyboardMouseTask = nil
+            liveViewDisappeared()
+        }
+    }
+
+    private func runKeyboardMouse() async {
+        let output = KeyboardMouseOutput()
+        var engine = KeyboardMouseEngine(map: keyboardMouseMap)
+        var last = ContinuousClock.now
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(2))
+            let now = ContinuousClock.now
+            let dt = Double((now - last) / .microseconds(1)) / 1_000_000
+            last = now
+            guard live else {
+                output.post(engine.releaseAll())
+                continue
+            }
+            engine.map = keyboardMouseMap
+            let source = connected || !bluetooth ? channel.live : pad.live
+            var gyro: KeyboardMouseEngine.GyroMouse?
+            if let g = editingProfile?.gyro, g.target == .mouse {
+                gyro = .init(sensitivity: g.sensitivity, key: g.key, hold: g.activation == .hold)
+            }
+            output.post(engine.step(source.snapshot().state, dt: dt, gyro: gyro))
+        }
+        output.post(engine.releaseAll())
+    }
+
     // MARK: - Screen
 
     enum ScreenUpload: Equatable {
@@ -538,4 +598,22 @@ extension Lighting {
     /// Flydigi's default animation (12 LEDs × 10 frames), recorded from a factory profile, used
     /// to switch a profile back to "Default" after a custom colour overwrote its frames.
     static let factoryFrames = [UInt8](Data(base64Encoded: "AICAAICAAICAAHGOAGCfAEm2ACvUAAD/KgDVSQC2YACfcQCOALZJALZJALZJAJ9gAI5xAICAAHGOAGCfAEm2ACvUAAD/KgDVK9QAK9QAK9QAAP8AANUqALZJAJ9gAI5xAICAAHGOAGCfAEm2cY4AcY4AcY4AYJ8ASbYAK9QAAP8AANUqALZJAJ9gAI5xAICAn2AAn2AAn2AAjnEAgIAAcY4AYJ8ASbYAK9QAAP8AANUqALZJ/wAA/wAA/wAA1CoAtkkAn2AAjnEAgIAAcY4AYJ8ASbYAK9QAnwBgnwBgnwBgtgBJ1AAr/wAA1CoAtkkAn2AAjnEAgIAAcY4AcQCOcQCOcQCOgACAjgBxnwBgtgBJ1AAr/wAA1CoAtkkAn2AAKgDVKgDVKgDVSQC2YACfcQCOgACAjgBxnwBgtgBJ1AAr/wAAAEm2AEm2AEm2ACvUAAD/KgDVSQC2YACfcQCOgACAjgBxnwBg")!)
+}
+
+/// Keyboard & mouse mappings, saved in Application Support as JSON.
+enum KeyboardMouseStore {
+    private static var file: URL {
+        ProfileBackup.folder.deletingLastPathComponent().appendingPathComponent("keyboard-mouse.json")
+    }
+
+    static func load() -> [Int: KeyboardMouseMap] {
+        guard let data = try? Data(contentsOf: file) else { return [:] }
+        return (try? JSONDecoder().decode([Int: KeyboardMouseMap].self, from: data)) ?? [:]
+    }
+
+    static func save(_ maps: [Int: KeyboardMouseMap]) {
+        guard let data = try? JSONEncoder().encode(maps) else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: file)
+    }
 }

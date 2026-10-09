@@ -105,6 +105,10 @@ private struct ButtonPanel: View {
     let key: FlydigiKey
     /// Shown while the user sets up a macro that isn't saved yet (`-composeMacro YES` opens it, for screenshots).
     @ViewState private var composingMacro = UserDefaults.standard.bool(forKey: "composeMacro")
+    /// Shown while the user picks a key that isn't set yet.
+    @ViewState private var composingKey = false
+
+    private enum ActsAs: Hashable { case button, macro, key }
 
     private var profile: Profile? { service.editingProfile }
 
@@ -112,30 +116,44 @@ private struct ButtonPanel: View {
         if let profile {
             let mapping = profile.mapping(for: key)
             let macro = profile.macros.first { $0.key == key }
-            let showsMacro = macro != nil || composingMacro
+            let hasKey = service.keyboardMouseMap[key] != nil
+            let mode: ActsAs = macro != nil || composingMacro ? .macro : hasKey || composingKey ? .key : .button
             VStack(alignment: .leading, spacing: 10) {
                 Caption("Acts as")
-                ChipPicker(options: [false, true], selection: showsMacro, label: { $0 ? "Macro" : "Button" }) { wantsMacro in
-                    if wantsMacro { composingMacro = true } else {
-                        composingMacro = false
-                        if macro != nil { Task { await service.removeMacro(on: key) } }
-                    }
+                ChipPicker(options: [ActsAs.button, .macro, .key], selection: mode, label: actsAsLabel) { wanted in
+                    composingMacro = wanted == .macro
+                    composingKey = wanted == .key
+                    if wanted != .macro, macro != nil { Task { await service.removeMacro(on: key) } }
+                    if wanted != .key, hasKey { service.editKeyboardMouse { $0[key] = nil } }
                 }
-                if !showsMacro {
+                if mode == .button {
                     PressToAssign(key: key, current: mapping)
                 }
             }
-            if showsMacro {
+            switch mode {
+            case .macro:
                 let others = profile.macros.filter { $0.key != key }.count
                 MacroEditor(key: key, saved: macro, slotsLeft: Profile.maxMacros - others) { composingMacro = false }
                     .id("\(profile.slot)-\(key)")
-            } else {
+            case .key:
+                KeyAssign(key: key)
+            case .button:
                 TurboSection(key: key, turbo: profile.turbo(for: key))
             }
-            Text("Saved to profile \(profile.slot + 1) on the controller, so it works everywhere: wired, wireless and Switch mode.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+            if mode != .key {
+                Text("Saved to profile \(profile.slot + 1) on the controller, so it works everywhere: wired, wireless and Switch mode.")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+            }
         } else {
             if service.connected { Note("Reading the controller's profiles…") }
+        }
+    }
+
+    private func actsAsLabel(_ m: ActsAs) -> String {
+        switch m {
+        case .button: "Button"
+        case .macro: "Macro"
+        case .key: "Key"
         }
     }
 }
@@ -187,6 +205,7 @@ private struct StickPanel: View {
         StickPlot(position: position, live: service.live,
                   deadZone: CGFloat(max(config?.deadZone ?? 0, 0)) / 100, edge: CGFloat(100 - max(config?.edge ?? 0, 0)) / 100)
         if let config { StickShape(config: config, left: left, position: position, live: service.live) }
+        StickActsAs(left: left)
         if let profile = service.editingProfile {
             let key: FlydigiKey = left ? .l3 : .r3
             VStack(alignment: .leading, spacing: 10) {
@@ -522,7 +541,7 @@ private struct StickPlot: View {
 // MARK: - Sliders
 
 /// A labelled slider that saves when the user lets go (not on every pixel of a drag).
-private struct ValueSlider: View {
+struct ValueSlider: View {
     let title: String
     let range: ClosedRange<Double>
     var unit = ""
@@ -700,6 +719,11 @@ private struct GyroPanel: View {
                         .font(.system(size: 11.5)).foregroundStyle(Theme.label)
                 }
                 ValueSlider(title: "Sensitivity", range: 1...100, value: g.sensitivity) { v in save(g) { $0.sensitivity = v } }
+                if g.target == .mouse {
+                    Text("Turning the controller moves the pointer, done by Apex Station like Space Station does on Windows.")
+                        .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                    KeyboardMouseStatus()
+                }
                 SettingRow(title: "Racing tilt", detail: "Steer by tilting instead of aiming.") {
                     GlowToggle(isOn: Binding(get: { g.racing }, set: { on in save(g) { $0.racing = on } }))
                 }

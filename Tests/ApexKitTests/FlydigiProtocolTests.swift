@@ -467,3 +467,64 @@ struct MacroRecorderTests {
         #expect(ProfileFile.decode(Data("not json".utf8)) == nil)
     }
 }
+
+@Suite struct KeyboardMouseTests {
+    private func state(_ buttons: GamepadButtons = [], left: StickPosition = .init(), right: StickPosition = .init()) -> GamepadState {
+        var s = GamepadState()
+        s.buttons = buttons
+        s.leftStick = left
+        s.rightStick = right
+        return s
+    }
+
+    @Test func buttonPressesAndReleasesAKey() {
+        var map = KeyboardMouseMap()
+        map[.a] = .key(code: 49, label: "Space")
+        var e = KeyboardMouseEngine(map: map)
+        #expect(e.step(state([.a]), dt: 0.002) == [.keyDown(49)])
+        #expect(e.step(state([.a]), dt: 0.002) == [])
+        #expect(e.step(state(), dt: 0.002) == [.keyUp(49)])
+    }
+
+    @Test func diagonalStickPressesTwoKeys() {
+        var map = KeyboardMouseMap()
+        map.leftStick = .wasd
+        var e = KeyboardMouseEngine(map: map)
+        let events = e.step(state(left: .init(x: 26000, y: 26000)), dt: 0.002)
+        #expect(Set(events.map { "\($0)" }) == ["keyDown(13)", "keyDown(2)"]) // W and D
+        #expect(Set(e.releaseAll().map { "\($0)" }) == ["keyUp(13)", "keyUp(2)"])
+    }
+
+    @Test func fullStickMovesThePointerAtItsSpeed() {
+        var map = KeyboardMouseMap()
+        map.rightStick = .mouse(sensitivity: 50)
+        var e = KeyboardMouseEngine(map: map)
+        // 2000 points a second for 10 ms.
+        #expect(e.step(state(right: .init(x: 32767, y: 0)), dt: 0.01) == [.move(dx: 20, dy: 0)])
+        // Up on the stick is up on screen (negative y).
+        guard case .move(_, let dy)? = e.step(state(right: .init(x: 0, y: 32767)), dt: 0.01).first else { Issue.record(); return }
+        #expect(dy == -20)
+        #expect(e.step(state(right: .init(x: 3000, y: 0)), dt: 0.01) == []) // inside the dead zone
+    }
+
+    @Test func gyroMovesOnlyWhileItsButtonIsHeld() {
+        var e = KeyboardMouseEngine(map: KeyboardMouseMap())
+        let gyro = KeyboardMouseEngine.GyroMouse(sensitivity: 50, key: .lt, hold: true)
+        var s = state()
+        s.motion = MotionSample(gyro: (0, 0, -1000), accel: (0, 0, 0))
+        #expect(e.step(s, dt: 0.01, gyro: gyro) == [])
+        s.leftTrigger = 255
+        // 1000 raw = 61 °/s; for 10 ms at 20 points a degree = 12.2 points.
+        guard case .move(let dx, let dy)? = e.step(s, dt: 0.01, gyro: gyro).first else { Issue.record(); return }
+        #expect(abs(dx - 12.207) < 0.01 && dy == 0)
+    }
+
+    @Test func scrollStepsOncePerPress() {
+        var map = KeyboardMouseMap()
+        map[.rb] = .scroll(up: false)
+        var e = KeyboardMouseEngine(map: map)
+        #expect(e.step(state([.rightBumper]), dt: 0.002) == [.scroll(-1)])
+        #expect(e.step(state([.rightBumper]), dt: 0.002) == [])
+        #expect(e.step(state(), dt: 0.002) == [])
+    }
+}

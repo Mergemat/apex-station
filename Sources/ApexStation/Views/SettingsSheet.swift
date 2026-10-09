@@ -91,6 +91,9 @@ struct SettingsSheet: View {
     private var app: some View {
         Card(title: "Apex Station") {
             VStack(spacing: 16) {
+                SettingRow(title: "Keyboard & mouse", detail: "Buttons, sticks and gyro you've set to keys or the mouse type and move the pointer. Needs Accessibility permission.") {
+                    GlowToggle(isOn: Binding(get: { service.keyboardMouseOn }, set: { service.setKeyboardMouse($0) }))
+                }
                 SettingRow(title: "Open at login", detail: "Keeps battery status in the menu bar. Games don't need the app running.") {
                     GlowToggle(isOn: Binding(get: { launchAtLogin }, set: { launchAtLogin = $0; LaunchAtLogin.set($0) }))
                 }
