@@ -19,11 +19,17 @@ public struct Macro: Sendable, Equatable {
     public var key: FlydigiKey
     public var mode: Mode
     public var steps: [Step]
+    /// Pause between repeats when it loops (while held or toggled), in ms, 0-250 in 10 ms steps.
+    public var interval: Int
 
-    public init(key: FlydigiKey, mode: Mode, steps: [Step]) {
+    /// Space Station's default pause between repeats.
+    public static let defaultInterval = 50
+
+    public init(key: FlydigiKey, mode: Mode, steps: [Step], interval: Int = Macro.defaultInterval) {
         self.key = key
         self.mode = mode
         self.steps = steps
+        self.interval = interval
     }
 }
 
@@ -36,6 +42,8 @@ extension Profile {
     public static let maxMacros = 5
     public static let maxMacroSteps = 128
     static let macroTick = 10
+    /// One byte per macro, in macro order: the pause between repeats in 10 ms units.
+    static let macroIntervalOffset = 820
 
     public var macros: [Macro] {
         let d = Array(bytes[Self.macroOffset..<(Self.macroOffset + Self.macroSize)])
@@ -54,7 +62,9 @@ extension Profile {
                 guard o + 3 < d.count, let k = FlydigiKey(rawValue: d[o + 2]) else { break }
                 steps.append(.init(key: k, press: d[o + 3] == 1, time: (Int(d[o]) | Int(d[o + 1]) << 8) * Self.macroTick))
             }
-            result.append(Macro(key: key, mode: mode, steps: steps))
+            let interval = bytes[Self.macroIntervalOffset + i]
+            result.append(Macro(key: key, mode: mode, steps: steps,
+                                interval: interval == 0xFF ? Macro.defaultInterval : Int(interval) * Self.macroTick))
         }
         return result
     }
@@ -62,7 +72,7 @@ extension Profile {
     /// Replaces the profile's macros and points each macro's button at it.
     public mutating func setMacros(_ macros: [Macro]) {
         let kept = Array(macros.prefix(Self.maxMacros)).map { m in
-            Macro(key: m.key, mode: m.mode, steps: Array(m.steps.prefix(Self.maxMacroSteps)))
+            Macro(key: m.key, mode: m.mode, steps: Array(m.steps.prefix(Self.maxMacroSteps)), interval: m.interval)
         }
         // Buttons that ran a macro which is gone go back to their own function.
         for old in self.macros where !kept.contains(where: { $0.key == old.key }) && mapping(for: old.key) == .macro {
@@ -86,6 +96,9 @@ extension Profile {
         d = Array(d.prefix(Self.macroSize))
         d += [UInt8](repeating: 0xFF, count: Self.macroSize - d.count)
         bytes.replaceSubrange(Self.macroOffset..<(Self.macroOffset + Self.macroSize), with: d)
+        for i in 0..<Self.maxMacros {
+            bytes[Self.macroIntervalOffset + i] = i < kept.count ? UInt8(min(250, max(0, kept[i].interval)) / Self.macroTick) : 0xFF
+        }
     }
 }
 

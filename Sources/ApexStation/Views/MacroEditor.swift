@@ -13,6 +13,7 @@ struct MacroEditor: View {
 
     @ViewState private var mode: Macro.Mode = .once
     @ViewState private var steps: [Macro.Step] = []
+    @ViewState private var interval = Macro.defaultInterval
     @ViewState private var dirty = false
 
     private var recording: Bool { service.recordedSteps != nil }
@@ -22,6 +23,12 @@ struct MacroEditor: View {
             Caption("Plays")
             ChipPicker(options: Macro.Mode.allCases, selection: mode, label: label) { mode = $0; dirty = true }
             Text(detail(mode)).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+            if mode != .once {
+                ValueSlider(title: "Pause between repeats", range: 0...250, unit: " ms", value: interval) { v in
+                    interval = (v + 5) / 10 * 10
+                    dirty = true
+                }
+            }
         }
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -150,7 +157,7 @@ struct MacroEditor: View {
             HStack(spacing: 8) {
                 Button {
                     Task {
-                        await service.setMacro(Macro(key: key, mode: mode, steps: steps))
+                        await service.setMacro(Macro(key: key, mode: mode, steps: steps, interval: interval))
                         dirty = false
                         onSaved()
                     }
@@ -183,6 +190,7 @@ struct MacroEditor: View {
     private func load(_ macro: Macro?) {
         mode = macro?.mode ?? .once
         steps = macro?.steps ?? []
+        interval = macro?.interval ?? Macro.defaultInterval
         dirty = false
     }
 

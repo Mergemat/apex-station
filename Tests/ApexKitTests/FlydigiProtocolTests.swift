@@ -320,6 +320,15 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(p.mapping(for: .m2) == .standard && p.macros.count == 1)
     }
 
+    @Test func macroLoopPausesFollowMacroOrder() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        let tap: [Macro.Step] = [.init(key: .a, press: true, time: 0), .init(key: .a, press: false, time: 50)]
+        p.setMacros([Macro(key: .m1, mode: .whileHeld, steps: tap), Macro(key: .m2, mode: .toggle, steps: tap, interval: 120)])
+        // Bytes 820-824, 10 ms units: 50 ms default, 120 ms, then unused slots.
+        #expect(Array(p.bytes[820..<825]) == [5, 12, 0xFF, 0xFF, 0xFF])
+        #expect(p.macros.map(\.interval) == [50, 120])
+    }
+
     @Test func readFrameMatchesSpaceStation() {
         // A3, len 4, slot 0, chunk size 20, sum 0xBB. This exact frame got the replies above.
         #expect([UInt8](Flydigi.readProfile(0))[0..<7] == [0x5A, 0xA5, 0xA3, 0x04, 0x00, 0x14, 0xBB])
