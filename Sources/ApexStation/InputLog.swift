@@ -39,7 +39,9 @@ struct InputLog {
         (GamepadButtons.turbo.rawValue, .turbo), (GamepadButtons.fn.rawValue, .fn),
     ]
 
-    mutating func add(_ changes: [(at: UInt64, digital: UInt32)], actsAs: (FlydigiKey) -> String?) {
+    /// `shown` gives the name to log for a key and, when it doesn't simply act as another button,
+    /// what it does instead (a macro, a keyboard key).
+    mutating func add(_ changes: [(at: UInt64, digital: UInt32)], shown: (FlydigiKey) -> (name: String, actsAs: String?)) {
         for change in changes {
             let start = self.start ?? change.at
             self.start = start
@@ -52,8 +54,9 @@ struct InputLog {
                 } else if let at = downAt.removeValue(forKey: bit) {
                     held = Int((change.at - at) / 1_000_000)
                 }
-                lines.insert(InputLogLine(id: nextID, time: Double(change.at - start) / 1e9, name: key.shortName,
-                                          down: down, held: held, actsAs: down ? actsAs(key) : nil), at: 0)
+                let shown = shown(key)
+                lines.insert(InputLogLine(id: nextID, time: Double(change.at - start) / 1e9, name: shown.name,
+                                          down: down, held: held, actsAs: down ? shown.actsAs : nil), at: 0)
                 nextID += 1
             }
             digital = change.digital

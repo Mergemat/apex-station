@@ -27,14 +27,15 @@ final class ControllerService {
 
     func clearInputLog() { inputLog.clear() }
 
-    /// What a button acts as right now: its keyboard & mouse key, or its remap in the active profile.
-    func actsAs(_ key: FlydigiKey) -> String? {
-        if keyboardMouseOn, let out = keyboardMouseMap[key] { return out.label }
+    /// How the input log shows a key: a button remapped to another shows as that button (what a
+    /// game gets); a macro or keyboard key shows as the key with what it does.
+    func logName(_ key: FlydigiKey) -> (name: String, actsAs: String?) {
+        if keyboardMouseOn, let out = keyboardMouseMap[key] { return (key.shortName, out.label) }
         return switch editingProfile?.mapping(for: key) {
-        case .button(let k)?: k.shortName
-        case .macro?: "macro"
-        case .keyboardOrMouse?: "keyboard/mouse"
-        default: nil
+        case .button(let k)?: (k.shortName, nil)
+        case .macro?: (key.shortName, "macro")
+        case .keyboardOrMouse?: (key.shortName, "keyboard/mouse")
+        default: (key.shortName, nil)
         }
     }
 
@@ -576,7 +577,7 @@ final class ControllerService {
             }
             let snap = source.snapshot()
             let changes = source.takeChanges()
-            if live, !changes.isEmpty { inputLog.add(changes, actsAs: actsAs) }
+            if live, !changes.isEmpty { inputLog.add(changes, shown: logName) }
             var shown = snap.state
             let now = ContinuousClock.now
             for key in [GamepadButtons.turbo, .fn] {

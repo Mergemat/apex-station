@@ -110,7 +110,7 @@ struct TestPanel: View {
             return "Bluetooth: shows what the controller sends after remapping. Paddles and gyro aren't reported."
         }
         let via = service.info?.connection == .wireless ? "2.4 GHz receiver" : "Cable"
-        return "\(via): shows the buttons you press; → is what each is set to act as."
+        return "\(via): remapped buttons show as the button they act as."
     }
 
     private func stat(_ value: String, _ unit: String) -> some View {
