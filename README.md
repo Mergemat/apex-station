@@ -74,7 +74,7 @@ It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` 
 ## Safety
 
 The app only uses the commands Space Station uses for settings, profiles and lighting. It never
-touches firmware. Each change writes only the bytes that differ, reads them back to check, and
+touches firmware. Each change writes only the bytes that differ, reads the profile back so the app shows what the controller stored, and
 keeps a backup in `~/Library/Application Support/Apex Station/Backups`.
 
 Not affiliated with Flydigi.
