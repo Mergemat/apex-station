@@ -151,6 +151,9 @@ private struct ProfileSwitcher: View {
     @ViewState private var renaming: Int?
     @ViewState private var resetting: Int?
     @ViewState private var newName = ""
+    @Environment(Library.self) private var library
+    /// The slot whose saved-profiles window is open.
+    @ViewState private var libraryFor: Int?
 
     var body: some View {
         HStack(spacing: 4) {
@@ -176,6 +179,10 @@ private struct ProfileSwitcher: View {
                 .disabled(!service.connected)
                 .contextMenu {
                     Button("Rename…") { renaming = slot; newName = profile.map(displayName) ?? "" }
+                    Divider()
+                    Button("Save to library") { if let file = service.exportProfile(slot) { library.save(file) } }
+                    Button("Saved profiles…") { libraryFor = slot }
+                    Divider()
                     Button("Export…") { export(slot) }
                     Button("Import…") { importFile(into: slot) }
                     Button("Reset to factory settings…", role: .destructive) { resetting = slot }
@@ -186,6 +193,9 @@ private struct ProfileSwitcher: View {
         .padding(4)
         .glass(.capsule)
         .animation(.spring(duration: 0.3), value: service.activeProfile)
+        .sheet(isPresented: Binding(get: { libraryFor != nil }, set: { if !$0 { libraryFor = nil } })) {
+            if let slot = libraryFor { LibrarySheet(slot: slot) }
+        }
         .alert("Rename profile", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name (up to 10 characters)", text: $newName)
             Button("Save") { if let slot = renaming { Task { await service.rename(slot: slot, to: newName) } } }

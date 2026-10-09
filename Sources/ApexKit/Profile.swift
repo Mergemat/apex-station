@@ -1,7 +1,7 @@
 import Foundation
 
 /// Buttons as Flydigi numbers them in profiles and remapping.
-public enum FlydigiKey: UInt8, Sendable, CaseIterable, Hashable {
+public enum FlydigiKey: UInt8, Sendable, CaseIterable, Hashable, Codable {
     case up = 0, right = 1, down = 2, left = 3
     case a = 4, b = 5, view = 6, x = 7, y = 8, menu = 9
     case lb = 10, rb = 11, lt = 12, rt = 13, l3 = 14, r3 = 15

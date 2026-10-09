@@ -1,10 +1,10 @@
 import Foundation
 
 /// A macro stored on the controller: pressing `key` plays back `steps`.
-public struct Macro: Sendable, Equatable {
-    public enum Mode: UInt8, Sendable, CaseIterable { case once = 1, whileHeld = 2, toggle = 3 }
+public struct Macro: Sendable, Equatable, Codable {
+    public enum Mode: UInt8, Sendable, CaseIterable, Codable { case once = 1, whileHeld = 2, toggle = 3 }
 
-    public struct Step: Sendable, Equatable {
+    public struct Step: Sendable, Equatable, Codable {
         public var key: FlydigiKey
         public var press: Bool
         /// Milliseconds from the start of the macro.

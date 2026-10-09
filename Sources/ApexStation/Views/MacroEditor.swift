@@ -1,10 +1,11 @@
 import ApexKit
 import SwiftUI
 
-/// Builds the macro a button plays: record it on the controller or add taps by hand, adjust the
-/// gaps between steps, then save it to the profile.
+/// Builds the macro a button plays: record it on the controller or load one saved on this Mac,
+/// adjust the gaps between steps, then save it to the profile.
 struct MacroEditor: View {
     @Environment(ControllerService.self) private var service
+    @Environment(Library.self) private var library
     let key: FlydigiKey
     let saved: Macro?
     /// Macros this profile can still take, counting this button's own.
@@ -15,6 +16,8 @@ struct MacroEditor: View {
     @ViewState private var steps: [Macro.Step] = []
     @ViewState private var interval = Macro.defaultInterval
     @ViewState private var dirty = false
+    @ViewState private var naming = false
+    @ViewState private var name = ""
 
     private var recording: Bool { service.recordedSteps != nil }
 
@@ -46,7 +49,10 @@ struct MacroEditor: View {
             } else {
                 stepList
             }
-            recordButton
+            HStack(spacing: 8) {
+                recordButton
+                if !recording { libraryMenu }
+            }
             if !service.canRead && !recording {
                 Text("Recording needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
             }
@@ -106,6 +112,42 @@ struct MacroEditor: View {
         .padding(12)
         .background(Color.red.opacity(0.08), in: .rect(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.3)))
+    }
+
+    /// Macros saved on this Mac: save this one, or load a saved one into the editor.
+    private var libraryMenu: some View {
+        Menu {
+            Button("Save to library…") { name = ""; naming = true }
+                .disabled(steps.isEmpty)
+            if !library.macros.isEmpty {
+                Section("Load") {
+                    ForEach(library.macros) { m in
+                        Button("\(m.name) · \(m.macro.steps.count) steps") {
+                            mode = m.macro.mode
+                            steps = m.macro.steps
+                            interval = m.macro.interval
+                            dirty = true
+                        }
+                    }
+                }
+                Menu("Delete") {
+                    ForEach(library.macros) { m in
+                        Button(m.name, role: .destructive) { library.deleteMacro(m) }
+                    }
+                }
+            }
+        } label: {
+            Label("Library", systemImage: "books.vertical")
+                .font(.system(size: 12.5, weight: .semibold))
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .glass(.capsule, interactive: true)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        .alert("Save macro", isPresented: $naming) {
+            TextField("Name", text: $name)
+            Button("Save") { library.saveMacro(Macro(key: key, mode: mode, steps: steps, interval: interval), name: name) }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var recordButton: some View {

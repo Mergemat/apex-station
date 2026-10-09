@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct ApexStationApp: App {
     @ViewState private var service = ControllerService()
+    @ViewState private var library = Library()
 
     init() {
         RenderCommands.runIfRequested()
@@ -13,6 +14,7 @@ struct ApexStationApp: App {
         Window("Apex Station", id: "main") {
             RootView()
                 .environment(service)
+                .environment(library)
                 .task { service.startOnce() }
                 .frame(minWidth: 980, minHeight: 680)
         }
