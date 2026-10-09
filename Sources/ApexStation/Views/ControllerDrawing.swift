@@ -1,4 +1,6 @@
 import ApexKit
+import AppKit
+import CoreText
 import SwiftUI
 
 struct ControllerDrawing: View {
@@ -92,9 +94,8 @@ struct ControllerDrawing: View {
             ? .linearGradient(Gradient(colors: [Theme.glow, Theme.accent]), startPoint: span.origin,
                               endPoint: CGPoint(x: span.maxX, y: span.maxY))
             : .color(.white.opacity(0.16)))
-        ctx.draw(Text(left ? "LB" : "RB").font(.system(size: 9.5, weight: .bold, design: .rounded))
-            .foregroundStyle(on ? Color.white : Color.white.opacity(0.5)),
-                 at: CGPoint(x: span.midX, y: Self.bodyTop + 22))
+        label(&ctx, left ? "LB" : "RB", at: CGPoint(x: span.midX, y: Self.bodyTop + 22), size: 9.5,
+              color: on ? .white : .white.opacity(0.5))
     }
 
     private func faceplate(_ ctx: inout GraphicsContext) {
@@ -155,9 +156,8 @@ struct ControllerDrawing: View {
     private func key(_ ctx: inout GraphicsContext, _ s: Shape, _ label: String, _ on: Bool, small: Bool = false) {
         let p = path(s)
         fill(&ctx, p, on: on)
-        ctx.draw(Text(label).font(.system(size: small ? 7.5 : 11, weight: .bold, design: .rounded)).tracking(0.4)
-            .foregroundStyle(on ? Color.white : Color.white.opacity(0.6)),
-                 at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY))
+        self.label(&ctx, label, at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY), size: small ? 7.5 : 11,
+                   color: on ? .white : .white.opacity(0.6))
     }
 
     private func smallKey(_ ctx: inout GraphicsContext, _ c: CGPoint, degrees: Double, icon: String, on: Bool) {
@@ -183,8 +183,7 @@ struct ControllerDrawing: View {
                                                     startPoint: CGPoint(x: r.minX, y: r.midY), endPoint: CGPoint(x: r.maxX, y: r.midY)))
         }
         ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.18)), lineWidth: 0.8)
-        ctx.draw(Text(label).font(.system(size: 11, weight: .bold, design: .rounded))
-            .foregroundStyle(f > 0.4 ? Color.white : Color.white.opacity(0.6)), at: CGPoint(x: r.midX, y: r.midY))
+        self.label(&ctx, label, at: CGPoint(x: r.midX, y: r.midY), size: 11, color: f > 0.4 ? .white : .white.opacity(0.6))
     }
 
     private func stick(_ ctx: inout GraphicsContext, _ c: CGPoint, _ pos: StickPosition, _ label: String, _ clicked: Bool) {
@@ -202,8 +201,7 @@ struct ControllerDrawing: View {
         let cap = path(.circle(p, 22))
         fill(&ctx, cap, on: clicked)
         if moved && !clicked { ctx.stroke(cap, with: .color(Theme.glow.opacity(0.85)), lineWidth: 1.5) }
-        ctx.draw(Text(label).font(.system(size: 9, weight: .bold, design: .rounded))
-            .foregroundStyle(clicked ? Color.white : Color.white.opacity(0.35)), at: p)
+        self.label(&ctx, label, at: p, size: 9, color: clicked ? .white : .white.opacity(0.35))
     }
 
     /// Four separate arrow keys, so each direction reads on its own.
@@ -233,6 +231,58 @@ struct ControllerDrawing: View {
     }
 
     private func caption(_ ctx: inout GraphicsContext, _ text: String, _ at: CGPoint) {
-        ctx.draw(Text(text).font(.system(size: 9, weight: .semibold)).tracking(2.4).foregroundStyle(Theme.label), at: at)
+        label(&ctx, text, at: at, size: 9, weight: .semibold, tracking: 2.4, color: Theme.label)
     }
+
+    // MARK: - Labels
+
+    /// Draws `text` with its visible letters exactly centred on `p`. The letters are drawn from
+    /// their vector outlines and centred by those outlines, so side bearings, descender space and
+    /// tracking can't push them off centre at any size.
+    private func label(_ ctx: inout GraphicsContext, _ text: String, at p: CGPoint, size: CGFloat,
+                       weight: Font.Weight = .bold, tracking: CGFloat = 0, color: Color) {
+        let glyphs = LabelGlyphs.path(text, size: size, weight: weight, tracking: tracking)
+        let box = glyphs.boundingRect
+        ctx.fill(glyphs.applying(.init(translationX: p.x - box.midX, y: p.y - box.midY)), with: .color(color))
+    }
+}
+
+/// Text turned into outlines (y down, origin on the baseline), cached because the canvas
+/// redraws every frame.
+@MainActor
+private enum LabelGlyphs {
+    private static var cache: [String: Path] = [:]
+
+    static func path(_ text: String, size: CGFloat, weight: Font.Weight, tracking: CGFloat) -> Path {
+        let key = "\(text)|\(size)|\(weight)|\(tracking)"
+        if let hit = cache[key] { return hit }
+        let ns: NSFont.Weight = switch weight {
+        case .heavy: .heavy
+        case .semibold: .semibold
+        case .medium: .medium
+        case .regular: .regular
+        default: .bold
+        }
+        let base = NSFont.systemFont(ofSize: size, weight: ns)
+        let font = base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) } ?? base
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font, .kern: tracking]))
+        let outline = CGMutablePath()
+        for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+            let count = CTRunGetGlyphCount(run)
+            let runFont = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
+            CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+            for (g, pos) in zip(glyphs, positions) {
+                guard let glyph = CTFontCreatePathForGlyph(runFont, g, nil) else { continue }
+                // CoreText is y-up; flip into the canvas's y-down space.
+                outline.addPath(glyph, transform: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: pos.x, ty: -pos.y))
+            }
+        }
+        let result = Path(outline)
+        cache[key] = result
+        return result
+    }
+
 }
