@@ -37,7 +37,7 @@ struct SettingsSheet: View {
         }
         .padding(24)
         .frame(width: 560, height: 620)
-        .background(Theme.background)
+        .background(Theme.sheet)
         .foregroundStyle(.white)
         .tint(Theme.accent)
         .preferredColorScheme(.dark)

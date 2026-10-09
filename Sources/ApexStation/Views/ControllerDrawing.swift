@@ -318,15 +318,22 @@ struct ControllerDrawing: View {
 
     /// Four separate arrow keys, so each direction reads on its own.
     private func dpad(_ ctx: inout GraphicsContext, _ c: CGPoint) {
-        let keys: [(FlydigiKey, GamepadButtons, String)] = [
-            (.up, .dpadUp, "chevron.up"), (.down, .dpadDown, "chevron.down"),
-            (.left, .dpadLeft, "chevron.left"), (.right, .dpadRight, "chevron.right"),
+        // Each arrow is a chevron pointing along (dx, dy), drawn as a path so it sits exactly in
+        // the middle of its key (a symbol glyph carries side spacing that pushes it off centre).
+        let keys: [(FlydigiKey, GamepadButtons, CGFloat, CGFloat)] = [
+            (.up, .dpadUp, 0, -1), (.down, .dpadDown, 0, 1), (.left, .dpadLeft, -1, 0), (.right, .dpadRight, 1, 0),
         ]
-        for (key, button, icon) in keys {
+        for (key, button, dx, dy) in keys {
             let r = L.dpadRect(key)
-            fill(&ctx, path(.rounded(r, 8)), on: b.contains(button))
-            ctx.draw(Text(Image(systemName: icon)).font(.system(size: 9, weight: .bold))
-                .foregroundStyle(b.contains(button) ? Color.white : Color.white.opacity(0.65)), at: CGPoint(x: r.midX, y: r.midY))
+            let on = b.contains(button)
+            fill(&ctx, path(.rounded(r, 8)), on: on)
+            let c = CGPoint(x: r.midX, y: r.midY), half: CGFloat = 4.2, depth: CGFloat = 2.2
+            var chevron = Path()
+            chevron.move(to: CGPoint(x: c.x - dx * depth - dy * half, y: c.y - dy * depth - dx * half))
+            chevron.addLine(to: CGPoint(x: c.x + dx * depth, y: c.y + dy * depth))
+            chevron.addLine(to: CGPoint(x: c.x - dx * depth + dy * half, y: c.y - dy * depth + dx * half))
+            ctx.stroke(chevron, with: .color(on ? .white : .white.opacity(0.65)),
+                       style: .init(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
     }
 

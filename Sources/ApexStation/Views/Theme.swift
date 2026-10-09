@@ -7,6 +7,8 @@ enum Theme {
     static let glow = Color(red: 0x7F / 255, green: 0xB2 / 255, blue: 0xFF / 255)
 
     static let background = Color(red: 0.010, green: 0.015, blue: 0.034)
+    /// Sheets: the same navy the main panel shows, so they don't read as black.
+    static let sheet = Color(red: 0.065, green: 0.09, blue: 0.16)
     /// Deep navy over the main glass panel so it reads darker without going black.
     static let panelShade = Color(red: 0.03, green: 0.055, blue: 0.13).opacity(0.5)
     static let idle = Color.white.opacity(0.09)
