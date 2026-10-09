@@ -18,6 +18,8 @@ enum ControllerArt {
     static let leftCap = (center: CGPoint(x: 125.29, y: 160.02), radius: CGFloat(26.01))
     static let rightStick = (center: CGPoint(x: 311.78, y: 238.77), radius: CGFloat(37.58))
     static let rightCap = (center: CGPoint(x: 311.78, y: 238.79), radius: CGFloat(26.01))
+    static let lbLabel = CGPoint(x: 139.56, y: 70.70)
+    static let rbLabel = CGPoint(x: 359.67, y: 70.57)
     static let screen = CGRect(x: 219.45, y: 138.81, width: 61.10, height: 29.39)
     static let dpadCenter = CGPoint(x: 185.34, y: 239.50)
     static let dpadArmWidth: CGFloat = 23.73

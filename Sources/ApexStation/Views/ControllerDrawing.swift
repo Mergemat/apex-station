@@ -75,8 +75,8 @@ struct ControllerDrawing: View {
             lit.clip(to: p)
             lit.fill(L.lines, with: .color(.white))
         }
-        bumperLabel(&ctx, "LB", L.bumperLeft, on: b.contains(.leftBumper))
-        bumperLabel(&ctx, "RB", L.bumperRight, on: b.contains(.rightBumper))
+        label(&ctx, "LB", at: ControllerArt.lbLabel, size: 8, color: b.contains(.leftBumper) ? .white : .white.opacity(0.8))
+        label(&ctx, "RB", at: ControllerArt.rbLabel, size: 8, color: b.contains(.rightBumper) ? .white : .white.opacity(0.8))
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
         caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
@@ -149,11 +149,6 @@ struct ControllerDrawing: View {
             ctx.fill(shape, with: .linearGradient(Gradient(colors: [.white.opacity(0.24), .white.opacity(0.11)]),
                                                   startPoint: CGPoint(x: r.midX, y: r.minY), endPoint: CGPoint(x: r.midX, y: r.maxY)))
         }
-    }
-
-    private func bumperLabel(_ ctx: inout GraphicsContext, _ text: String, _ shape: Path, on: Bool) {
-        let r = shape.boundingRect
-        label(&ctx, text, at: CGPoint(x: r.midX, y: r.minY + r.height * 0.45), size: 8, color: on ? .white : .white.opacity(0.8))
     }
 
     /// The light bar along the arch between the grips: glows while the controller is live.
