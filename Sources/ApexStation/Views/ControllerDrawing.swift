@@ -428,7 +428,7 @@ enum ControllerLayout {
             .key(.a): circle(a, faceRadius), .key(.b): circle(b, faceRadius),
             .key(.x): circle(x, faceRadius), .key(.y): circle(y, faceRadius),
             .key(.view): Path(polygon: ControllerArt.view), .key(.menu): Path(polygon: ControllerArt.menu),
-            .key(.home): Path(polygon: ControllerArt.home),
+            .key(.home): ControllerArt.home.reduce(into: Path()) { $0.addPath(Path(polygon: $1)) },
             .key(.m1): m1, .key(.m2): m2, .key(.m3): m3, .key(.m4): m4,
             .key(.turbo): Path(roundedRect: turbo, cornerRadius: 11), .key(.fn): Path(roundedRect: fn, cornerRadius: 11),
             .key(.lb): bumperLeft, .key(.rb): bumperRight,
