@@ -84,6 +84,80 @@ public struct StickConfig: Sendable, Equatable {
     }
 }
 
+/// A trigger's force-feedback effect ("ForceAdapt"). Values are 0-255 unless noted.
+public enum TriggerEffect: Sendable, Equatable {
+    case normal
+    /// Resistance from `start` onwards, like a pedal.
+    case racing(start: Int, damping: Int)
+    /// A rapid buzz past `start`, like an automatic weapon.
+    case recoil(start: Int, startForce: Int, strength: Int, frequency: Int)
+    /// A click-through break point at `start`, like a heavy trigger.
+    case sniper(start: Int, stroke: Int, resistance: Int)
+    /// Stops the trigger at `position` (20-200).
+    case lock(position: Int)
+    /// Vibrates with the game's rumble once past `start`.
+    case vibration(threshold: Int, scale: Int, start: Int, frequency: Int)
+
+    /// Defaults the controller's own menu writes for each mode.
+    public static let racingDefault = TriggerEffect.racing(start: 0, damping: 30)
+    public static let recoilDefault = TriggerEffect.recoil(start: 0, startForce: 1, strength: 50, frequency: 15)
+    public static let sniperDefault = TriggerEffect.sniper(start: 50, stroke: 30, resistance: 1)
+    public static let lockDefault = TriggerEffect.lock(position: 80)
+    public static let vibrationDefault = TriggerEffect.vibration(threshold: 10, scale: 50, start: 1, frequency: 90)
+}
+
+/// A trigger's travel range and effect, as stored in a profile.
+public struct TriggerConfig: Sendable, Equatable {
+    /// Travel (0-255) where the trigger starts and finishes reporting.
+    public var start: Int
+    public var end: Int
+    public var effect: TriggerEffect
+
+    public init(start: Int, end: Int, effect: TriggerEffect) {
+        self.start = start
+        self.end = end
+        self.effect = effect
+    }
+}
+
+/// Grip rumble, as stored in a profile.
+public struct VibrationConfig: Sendable, Equatable {
+    public var enabled: Bool
+    /// Motor strength, 0-100.
+    public var left: Int
+    public var right: Int
+    public init(enabled: Bool, left: Int, right: Int) {
+        self.enabled = enabled
+        self.left = left
+        self.right = right
+    }
+}
+
+/// Gyro aiming, as stored in a profile.
+public struct GyroConfig: Sendable, Equatable {
+    public enum Target: UInt8, Sendable, CaseIterable { case off = 0, leftStick = 1, rightStick = 2, mouse = 3 }
+    public enum Activation: UInt8, Sendable, CaseIterable { case toggle = 0, hold = 1 }
+
+    public var target: Target
+    /// The button that turns gyro on; nil = always on.
+    public var key: FlydigiKey?
+    public var activation: Activation
+    public var deadZone: Int
+    /// 1-100.
+    public var sensitivity: Int
+    /// Racing tilt instead of shooter aiming.
+    public var racing: Bool
+
+    public init(target: Target, key: FlydigiKey?, activation: Activation, deadZone: Int, sensitivity: Int, racing: Bool) {
+        self.target = target
+        self.key = key
+        self.activation = activation
+        self.deadZone = deadZone
+        self.sensitivity = sensitivity
+        self.racing = racing
+    }
+}
+
 /// One of the controller's four on-board profiles: an 840-byte record (format 3.1).
 ///
 /// Layout (from Space Station's parser): 0-1 format version, 2 package count, 3-12 legacy LED,
@@ -184,6 +258,109 @@ public struct Profile: Sendable, Equatable {
         bytes[base + 1] = UInt8(clamping: max(0, min(127, c.deadZone)))
         bytes[base + 6] = UInt8(clamping: max(0, min(127, c.edge)))
         bytes[extra + 10] = c.circular ? 1 : 0
+    }
+
+    // Triggers: 7 bytes each at 123 (kind 0 normal / 1 ForceAdapt / 2 vibration, start, curve
+    // points, end) and a 20-byte ForceAdapt block each at 185 (type, bind type/filter/scale,
+    // 5 bind params, mixed border, 10 params). Layout and presets from the Apex 4 port's notes,
+    // recorded from the controller's own trigger menu.
+    private static func triggerBase(_ left: Bool) -> Int { 123 + (left ? 0 : 7) }
+    private static func triggerBlock(_ left: Bool) -> Int { 185 + (left ? 0 : 20) }
+
+    public func trigger(left: Bool) -> TriggerConfig {
+        let base = Self.triggerBase(left), blk = Self.triggerBlock(left)
+        let p = { Int(bytes[blk + 10 + $0]) }
+        let effect: TriggerEffect = switch bytes[blk] {
+        case 1: .racing(start: p(0), damping: p(1))
+        case 2: .recoil(start: p(0), startForce: p(1), strength: p(2), frequency: p(3))
+        case 3: .sniper(start: p(0), stroke: p(1), resistance: p(2))
+        case 4: .lock(position: p(0))
+        case 5: .vibration(threshold: Int(bytes[blk + 2]), scale: Int(bytes[blk + 3]), start: p(0), frequency: p(3))
+        default: .normal
+        }
+        return TriggerConfig(start: Int(bytes[base + 1]), end: Int(bytes[base + 6]), effect: effect)
+    }
+
+    public mutating func setTrigger(_ t: TriggerConfig, left: Bool) {
+        let base = Self.triggerBase(left), blk = Self.triggerBlock(left)
+        let b = { (v: Int) in UInt8(clamping: max(0, min(255, v))) }
+        bytes[base + 1] = b(t.start)
+        bytes[base + 6] = b(t.end)
+        // Block bytes 0-9 per mode, then params; unused params stay 0xFF like the controller writes.
+        var header: [UInt8], params: [UInt8], kind: UInt8 = 1
+        switch t.effect {
+        case .normal:
+            header = [0, 0, 0x0A, 0x32, 0x64, 1, 0xFF, 0x46, 0, 0xFF]; params = [0, 0, 0, 0, 0]; kind = 0
+        case let .racing(start, damping):
+            header = [1, 0, 0x0A, 0x32, 0x64, 1, 0xFF, 0x46, 0, 0xFF]
+            // "Output from the start position" only makes sense once there's travel before it.
+            params = [b(start), b(max(1, damping)), start > 0 ? 1 : 0, 0, 0]
+        case let .recoil(start, startForce, strength, frequency):
+            header = [2, 0, 0x0A, 0x32, 0x64, 1, 0xFF, 0x46, 0, 0xFF]
+            params = [b(start), b(max(1, startForce)), b(max(1, strength)), b(max(1, frequency)), 1]
+        case let .sniper(start, stroke, resistance):
+            header = [3, 0, 0x0A, 0x0A, 0x64, 1, 0xFF, 0x46, 0, 0xFF]
+            params = [b(start), b(max(1, stroke)), b(max(1, resistance)), 0, 1]
+        case let .lock(position):
+            header = [4, 0, 0x0A, 0x0A, 0x64, 1, 0xFF, 0x46, 0, 0xFF]
+            params = [b(max(20, min(200, position))), 0xFA, 1, 0, 0]
+        case let .vibration(threshold, scale, start, frequency):
+            // Synced with grip rumble: bind type 2, filter = threshold, then `start 1 1 frequency 0`.
+            header = [5, 2, b(threshold), b(scale), b(max(1, start)), 1, 1, b(max(1, frequency)), 0, 0xFF]
+            params = [b(max(1, start)), 1, 1, b(max(1, frequency)), 0]
+            kind = 2
+        }
+        bytes[base] = kind
+        bytes.replaceSubrange(blk..<(blk + 20), with: header + params + [UInt8](repeating: 0xFF, count: 5))
+    }
+
+    // Vibration: 9 bytes at 145 (master 0 = on; per motor: 0 = on, min, max, strength).
+    public var vibration: VibrationConfig {
+        VibrationConfig(enabled: bytes[145] == 0, left: Int(bytes[149]), right: Int(bytes[153]))
+    }
+
+    public mutating func setVibration(_ v: VibrationConfig) {
+        bytes[145] = v.enabled ? 0 : 0xFF
+        bytes[146] = v.enabled ? 0 : 0xFF
+        bytes[150] = v.enabled ? 0 : 0xFF
+        bytes[149] = UInt8(clamping: max(0, min(100, v.left)))
+        bytes[153] = UInt8(clamping: max(0, min(100, v.right)))
+    }
+
+    // Gyro: 8 bytes at 137 (target, activation key, activation type, dead zone, sensitivity ×2,
+    // use mode, second key).
+    public var gyro: GyroConfig {
+        GyroConfig(
+            target: GyroConfig.Target(rawValue: bytes[137]) ?? .off,
+            key: bytes[138] == 0xFF ? nil : FlydigiKey(rawValue: bytes[138]),
+            activation: GyroConfig.Activation(rawValue: bytes[139]) ?? .toggle,
+            deadZone: Int(bytes[140]),
+            sensitivity: Int(max(bytes[141], bytes[142])),
+            racing: bytes[143] == 1)
+    }
+
+    public mutating func setGyro(_ g: GyroConfig) {
+        bytes[137] = g.target.rawValue
+        bytes[139] = g.activation.rawValue
+        bytes[141] = UInt8(clamping: max(1, min(100, g.sensitivity)))
+        bytes[142] = bytes[141]
+        bytes[143] = g.racing ? 1 : 0
+        if g.target == .mouse {
+            // Space Station's encoding for mouse mode.
+            bytes[138] = 0xFF
+            bytes[140] = 0
+            bytes[144] = 0xFF
+        } else {
+            bytes[138] = g.key?.rawValue ?? 0xFF
+            bytes[140] = UInt8(clamping: max(0, min(100, g.deadZone)))
+        }
+    }
+
+    /// The profile's name (up to 10 characters).
+    public mutating func setName(_ name: String) {
+        var data = [UInt8](String(name.prefix(10)).data(using: .utf16LittleEndian) ?? Data())
+        data = Array(data.prefix(20))
+        bytes.replaceSubrange(770..<790, with: data + [UInt8](repeating: 0, count: 20 - data.count))
     }
 
     /// Buttons that do something other than their own function.

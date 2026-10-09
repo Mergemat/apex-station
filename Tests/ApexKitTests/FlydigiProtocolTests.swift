@@ -219,6 +219,54 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect(changed == [116, 117, 122, 802, 812]) // type, dead zone, edge, extra type, circularity
     }
 
+    @Test func realProfileHasNormalTriggers() throws {
+        let p = try #require(Profile(slot: 0, bytes: record))
+        #expect(p.trigger(left: true) == TriggerConfig(start: 0, end: 255, effect: .normal))
+        #expect(p.trigger(left: false).effect == .normal)
+    }
+
+    /// The controller's own trigger menu writes these blocks (recorded on an Apex 4, same format).
+    @Test(arguments: [
+        (TriggerEffect.racingDefault, "01 00 0a 32 64 01 ff 46 00 ff 00 1e 00 00 00"),
+        (TriggerEffect.recoilDefault, "02 00 0a 32 64 01 ff 46 00 ff 00 01 32 0f 01"),
+        (TriggerEffect.sniperDefault, "03 00 0a 0a 64 01 ff 46 00 ff 32 1e 01 00 01"),
+        (TriggerEffect.lock(position: 40), "04 00 0a 0a 64 01 ff 46 00 ff 28 fa 01 00 00"),
+        (TriggerEffect.vibrationDefault, "05 02 0a 32 01 01 01 5a 00 ff 01 01 01 5a 00"),
+    ])
+    func triggerModesMatchTheControllersOwnPresets(effect: TriggerEffect, block: String) throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setTrigger(TriggerConfig(start: 0, end: 255, effect: effect), left: false)
+        #expect(Array(p.bytes[205..<220]) == bytes(block))
+        #expect(p.trigger(left: false).effect == effect)
+        #expect(p.trigger(left: true) == TriggerConfig(start: 0, end: 255, effect: .normal)) // left untouched
+    }
+
+    @Test func realProfileVibrationAndGyro() throws {
+        let p = try #require(Profile(slot: 0, bytes: record))
+        // Bytes 145-153: on, both motors strength 40. Bytes 137-144: gyro off, LT activates (toggle), dead zone 4, sensitivity 25.
+        #expect(p.vibration == VibrationConfig(enabled: true, left: 40, right: 40))
+        #expect(p.gyro == GyroConfig(target: .off, key: .lt, activation: .toggle, deadZone: 4, sensitivity: 25, racing: false))
+    }
+
+    @Test func gyroAndVibrationEditsTouchOnlyTheirBytes() throws {
+        let old = try #require(Profile(slot: 0, bytes: record))
+        var p = old
+        p.setGyro(GyroConfig(target: .rightStick, key: .lt, activation: .hold, deadZone: 4, sensitivity: 60, racing: false))
+        p.setVibration(VibrationConfig(enabled: true, left: 80, right: 20))
+        #expect(p.gyro.target == .rightStick && p.gyro.activation == .hold && p.gyro.sensitivity == 60)
+        #expect(p.vibration == VibrationConfig(enabled: true, left: 80, right: 20))
+        let changed = Set((0..<Profile.size).filter { p.bytes[$0] != old.bytes[$0] })
+        #expect(changed.isSubset(of: Set(137...153)))
+    }
+
+    @Test func renameWritesUTF16Name() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setName("Shooters")
+        #expect(p.name == "Shooters")
+        p.setName("A very long profile name")
+        #expect(p.name == "A very lon") // 10 characters fit
+    }
+
     @Test func readFrameMatchesSpaceStation() {
         // A3, len 4, slot 0, chunk size 20, sum 0xBB. This exact frame got the replies above.
         #expect([UInt8](Flydigi.readProfile(0))[0..<7] == [0x5A, 0xA5, 0xA3, 0x04, 0x00, 0x14, 0xBB])
