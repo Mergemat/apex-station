@@ -79,56 +79,60 @@ struct ControllerDrawing: View {
 
     /// A bumper is a strip of even thickness along the outline's top edge, over the hump
     /// (12-34 % of the width, measured), so it follows the controller's curve exactly.
-    /// A bumper is its own part sitting on the shoulder: a curved bar that follows the traced
-    /// outline at a small gap, outside the shell.
+    /// A bumper is the band along the shoulder's top edge: the shell intersected with a thick,
+    /// round-capped line traced along the shoulder. That keeps it the same thickness all the way
+    /// round and gives it rounded ends that stop before the faceplate.
     private func bumper(_ ctx: inout GraphicsContext, _ shell: Path, left: Bool, on: Bool) {
-        let bar = Self.bumperBar(left: left)
+        let shape = Self.bumperShape(left: left, shell: shell)
+        let r = shape.boundingRect
         if on {
             var g = ctx
-            g.addFilter(.blur(radius: 10))
-            g.fill(bar, with: .color(Theme.accent))
+            g.addFilter(.blur(radius: 9))
+            g.fill(shape, with: .color(Theme.accent))
         }
-        let r = bar.boundingRect
-        ctx.fill(bar, with: on
+        ctx.fill(shape, with: on
             ? .linearGradient(Gradient(colors: [Theme.glow, Theme.accent]), startPoint: r.origin, endPoint: CGPoint(x: r.maxX, y: r.maxY))
-            : .linearGradient(Gradient(colors: [.white.opacity(0.20), .white.opacity(0.09)]),
+            : .linearGradient(Gradient(colors: [.white.opacity(0.24), .white.opacity(0.11)]),
                               startPoint: CGPoint(x: r.midX, y: r.minY), endPoint: CGPoint(x: r.midX, y: r.maxY)))
-        ctx.stroke(bar, with: .color(.white.opacity(on ? 0.6 : 0.28)), lineWidth: 0.9)
-        label(&ctx, left ? "LB" : "RB", at: Self.bumperLabel(left: left), size: 9.5, color: on ? .white : .white.opacity(0.75))
+        // Thin edge all round, brighter rim on top where light catches the shoulder.
+        ctx.stroke(shape, with: .color(on ? Theme.glow.opacity(0.9) : .white.opacity(0.22)), lineWidth: 0.8)
+        var rim = ctx
+        rim.clip(to: shape)
+        rim.stroke(shell, with: .color(.white.opacity(on ? 0.75 : 0.5)), lineWidth: 2)
+        label(&ctx, left ? "LB" : "RB", at: Self.bumperLabel(left: left), size: 9.5, color: on ? .white : .white.opacity(0.8))
     }
 
-    private static let bumperGap: CGFloat = 5
-    private static let bumperThickness: CGFloat = 17
+    private static let bumperThickness: CGFloat = 19
 
-    /// The shoulder's top edge (13-33 % of the width) offset outwards from the body.
-    private static func bumperSpine(left: Bool) -> [CGPoint] {
-        let shoulder = ApexOutline.points.filter { $0.x >= 0.13 && $0.x <= 0.33 && $0.y < 0.08 }.sorted { $0.x < $1.x }
-        let pts = shoulder.map { CGPoint(x: $0.x * 500, y: bodyTop + $0.y * 500) }
-        let offset = bumperGap + bumperThickness / 2
-        let spine = pts.indices.map { i -> CGPoint in
-            let a = pts[max(0, i - 1)], b = pts[min(pts.count - 1, i + 1)]
-            let tx = b.x - a.x, ty = b.y - a.y, len = max(0.001, (tx * tx + ty * ty).squareRoot())
-            // Outward normal of a left-to-right top edge points up-left of the tangent.
-            return CGPoint(x: pts[i].x + ty / len * offset, y: pts[i].y - tx / len * offset)
+    /// The shoulder's top edge from the traced outline, left side, in drawing space.
+    private static let shoulderEdge: [CGPoint] = ApexOutline.points
+        .filter { $0.x >= 0.165 && $0.x <= 0.275 && $0.y < 0.08 }
+        .sorted { $0.x < $1.x }
+        .map { CGPoint(x: $0.x * 500, y: bodyTop + $0.y * 500) }
+
+    private static func bumperShape(left: Bool, shell: Path) -> Path {
+        var spine = Path()
+        let pts = left ? shoulderEdge : shoulderEdge.map { $0.applying(mirror) }
+        spine.move(to: pts[0])
+        for i in 1..<pts.count {
+            let mid = CGPoint(x: (pts[i - 1].x + pts[i].x) / 2, y: (pts[i - 1].y + pts[i].y) / 2)
+            spine.addQuadCurve(to: mid, control: pts[i - 1])
         }
-        return left ? spine : spine.map { $0.applying(mirror) }
+        spine.addLine(to: pts[pts.count - 1])
+        // Twice the thickness, centred on the edge: the half inside the shell is the band.
+        let tube = spine.strokedPath(.init(lineWidth: bumperThickness * 2, lineCap: .round, lineJoin: .round))
+        return Path(shell.cgPath.intersection(tube.cgPath))
     }
 
-    private static func bumperBar(left: Bool) -> Path {
-        let spine = bumperSpine(left: left)
-        var line = Path()
-        line.move(to: spine[0])
-        for i in 1..<spine.count {
-            let mid = CGPoint(x: (spine[i - 1].x + spine[i].x) / 2, y: (spine[i - 1].y + spine[i].y) / 2)
-            line.addQuadCurve(to: mid, control: spine[i - 1])
-        }
-        line.addLine(to: spine[spine.count - 1])
-        return line.strokedPath(.init(lineWidth: bumperThickness, lineCap: .round, lineJoin: .round))
-    }
-
+    /// Middle of the band: halfway along the shoulder, half the thickness in from the edge.
     private static func bumperLabel(left: Bool) -> CGPoint {
-        let spine = bumperSpine(left: left)
-        return spine[spine.count / 2]
+        let e = shoulderEdge
+        let i = e.count / 2
+        let a = e[max(0, i - 1)], b = e[min(e.count - 1, i + 1)]
+        let tx = b.x - a.x, ty = b.y - a.y, len = max(0.001, (tx * tx + ty * ty).squareRoot())
+        // Inward normal of a left-to-right top edge points down-right of the tangent.
+        let p = CGPoint(x: e[i].x - ty / len * bumperThickness / 2, y: e[i].y + tx / len * bumperThickness / 2)
+        return left ? p : p.applying(mirror)
     }
 
     private func faceplate(_ ctx: inout GraphicsContext) {
