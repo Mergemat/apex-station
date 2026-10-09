@@ -134,9 +134,9 @@ struct ControllerDrawing: View {
 
     /// A bumper is a strip of even thickness along the outline's top edge, over the hump
     /// (12-34 % of the width, measured), so it follows the controller's curve exactly.
-    /// A bumper is the band along the shoulder's top edge: the shell intersected with a thick,
-    /// round-capped line traced along the shoulder. That keeps it the same thickness all the way
-    /// round and gives it rounded ends that stop before the faceplate.
+    /// A bumper is the raised band along the shoulder's top edge. It keeps an even thickness
+    /// round the shoulder, has a rounded outer end, and toward the middle tapers up into the top
+    /// edge where the shoulder flattens out. The faceplate sits in front of it.
     private func bumper(_ ctx: inout GraphicsContext, _ shell: Path, left: Bool, on: Bool) {
         let shape = Self.bumperShape(left: left, shell: shell)
         let r = shape.boundingRect
@@ -159,34 +159,82 @@ struct ControllerDrawing: View {
 
     private static let bumperThickness: CGFloat = 19
 
-    /// The shoulder's top edge from the traced outline, left side, in drawing space.
-    private static let shoulderEdge: [CGPoint] = ApexOutline.points
-        .filter { $0.x >= 0.165 && $0.x <= 0.275 && $0.y < 0.08 }
-        .sorted { $0.x < $1.x }
-        .map { CGPoint(x: $0.x * 500, y: bodyTop + $0.y * 500) }
+    /// Where the band starts on the outer shoulder, where it's at full thickness until, and where
+    /// it has tapered into the top edge (unit x, left side).
+    private static let bumperStart: CGFloat = 0.135, bumperFullUntil: CGFloat = 0.275, bumperEnd: CGFloat = 0.37
+
+    /// The shoulder's top edge from the traced outline, left side, densely sampled in drawing space.
+    private static let shoulderEdge: [CGPoint] = {
+        let p = ApexOutline.points, n = p.count
+        var dense: [CGPoint] = []
+        for i in 0..<n {
+            // The same Catmull-Rom curve ApexOutline.path draws.
+            let p0 = p[(i - 1 + n) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n]
+            for t in stride(from: 0.0, to: 1.0, by: 0.05) {
+                let t2 = t * t, t3 = t2 * t
+                func c(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
+                    0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+                }
+                dense.append(CGPoint(x: c(p0.x, p1.x, p2.x, p3.x), y: c(p0.y, p1.y, p2.y, p3.y)))
+            }
+        }
+        return dense
+            .filter { $0.x >= bumperStart - 0.01 && $0.x <= bumperEnd + 0.01 && $0.y < 0.12 }
+            .sorted { $0.x < $1.x }
+            .map { CGPoint(x: $0.x * 500, y: bodyTop + $0.y * 500) }
+    }()
 
     static func bumperRegion(left: Bool) -> Path {
         bumperShape(left: left, shell: ApexOutline.path(width: 500, origin: CGPoint(x: 0, y: bodyTop)))
     }
 
-    private static func bumperShape(left: Bool, shell: Path) -> Path {
-        var spine = Path()
-        let pts = left ? shoulderEdge : shoulderEdge.map { $0.applying(mirror) }
-        spine.move(to: pts[0])
-        for i in 1..<pts.count {
-            let mid = CGPoint(x: (pts[i - 1].x + pts[i].x) / 2, y: (pts[i - 1].y + pts[i].y) / 2)
-            spine.addQuadCurve(to: mid, control: pts[i - 1])
+    /// How thick the band is at unit x: a rounded outer end, then even, then an S-curve taper.
+    private static func bumperThickness(at x: CGFloat) -> CGFloat {
+        let capLength: CGFloat = 0.032
+        if x <= bumperStart { return 0 }
+        if x < bumperStart + capLength {
+            let s = (x - bumperStart) / capLength
+            return bumperThickness * (1 - (1 - s) * (1 - s)).squareRoot()
         }
-        spine.addLine(to: pts[pts.count - 1])
-        // Twice the thickness, centred on the edge: the half inside the shell is the band.
-        let tube = spine.strokedPath(.init(lineWidth: bumperThickness * 2, lineCap: .round, lineJoin: .round))
-        return Path(shell.cgPath.intersection(tube.cgPath))
+        if x <= bumperFullUntil { return bumperThickness }
+        if x >= bumperEnd { return 0 }
+        let s = (x - bumperFullUntil) / (bumperEnd - bumperFullUntil)
+        return bumperThickness * (1 - s * s * (3 - 2 * s))
+    }
+
+    private static func bumperShape(left: Bool, shell: Path) -> Path {
+        let e = shoulderEdge
+        // The lower edge: each point on the top edge moved inward along its normal.
+        var lower: [CGPoint] = []
+        for i in e.indices {
+            let a = e[max(0, i - 1)], b = e[min(e.count - 1, i + 1)]
+            let tx = b.x - a.x, ty = b.y - a.y, len = max(0.001, (tx * tx + ty * ty).squareRoot())
+            let t = bumperThickness(at: e[i].x / 500)
+            lower.append(CGPoint(x: e[i].x - ty / len * t, y: e[i].y + tx / len * t))
+        }
+        // The shoulder's curvature varies, so the offset edge wobbles; smooth it (Gaussian, ~12 pt).
+        let sigma = 18.0, reach = Int(sigma * 3)
+        let weights = (-reach...reach).map { exp(-0.5 * pow(Double($0) / sigma, 2)) }
+        lower = lower.indices.map { i in
+            var x = 0.0, y = 0.0, w = 0.0
+            for (k, d) in (-reach...reach).enumerated() {
+                let q = lower[min(max(i + d, 0), lower.count - 1)]
+                x += q.x * weights[k]; y += q.y * weights[k]; w += weights[k]
+            }
+            return CGPoint(x: x / w, y: y / w)
+        }
+        var band = Path()
+        band.addLines(e + lower.reversed())
+        band.closeSubpath()
+        if !left { band = band.applying(mirror) }
+        return Path(shell.cgPath.intersection(band.cgPath).subtracting(faceplatePath.cgPath))
     }
 
     /// Middle of the band: halfway along the shoulder, half the thickness in from the edge.
     private static func bumperLabel(left: Bool) -> CGPoint {
         let e = shoulderEdge
-        let i = e.count / 2
+        let mid = (bumperStart + bumperFullUntil) / 2 * 500
+        let i = e.firstIndex { $0.x >= mid } ?? e.count / 2
         let a = e[max(0, i - 1)], b = e[min(e.count - 1, i + 1)]
         let tx = b.x - a.x, ty = b.y - a.y, len = max(0.001, (tx * tx + ty * ty).squareRoot())
         // Inward normal of a left-to-right top edge points down-right of the tangent.
@@ -194,11 +242,17 @@ struct ControllerDrawing: View {
         return left ? p : p.applying(mirror)
     }
 
-    private func faceplate(_ ctx: inout GraphicsContext) {
+    /// The metal plate in the middle of the face, in front of the bumpers.
+    private static let faceplatePath: Path = {
         let corners = [(0.320, 0.026), (0.680, 0.026), (0.672, 0.104), (0.548, 0.248), (0.452, 0.248), (0.328, 0.104)]
         var p = Path()
-        p.addLines(corners.map { at($0.0, $0.1) })
+        p.addLines(corners.map { CGPoint(x: $0.0 * 500, y: bodyTop + $0.1 * 500) })
         p.closeSubpath()
+        return p
+    }()
+
+    private func faceplate(_ ctx: inout GraphicsContext) {
+        let p = Self.faceplatePath
         ctx.fill(p, with: .color(.black.opacity(0.18)))
         ctx.stroke(p, with: .color(.white.opacity(0.12)), lineWidth: 0.8)
     }
