@@ -49,6 +49,10 @@ public struct Lighting: Sendable, Equatable {
 
     public mutating func setOff() { bytes[8] = Mode.off.rawValue }
 
+    /// The lights flash along when the grips vibrate (Space Station's "vibration light effect").
+    public var gripSync: Bool { bytes[9] == 1 }
+    public mutating func setGripSync(_ on: Bool) { bytes[9] = on ? 1 : 0 }
+
     /// Back to Flydigi's own animation, using the frames recorded from a factory profile.
     public mutating func setStandard(frames: [UInt8], loopEnd: UInt8) {
         bytes[8] = Mode.standard.rawValue

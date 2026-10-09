@@ -332,6 +332,14 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
 }
 
 @Suite struct LightingTests {
+    @Test func gripSyncIsHeaderByteNine() throws {
+        let old = try #require(Lighting(slot: 0, bytes: record))
+        var l = old
+        l.setGripSync(!old.gripSync)
+        #expect(l.gripSync == !old.gripSync)
+        #expect((0..<record.count).filter { l.bytes[$0] != old.bytes[$0] } == [9])
+    }
+
     /// Profile 0's lighting from the user's Apex 5: factory animation, 12 LEDs, 10 frames.
     let record = try! [UInt8](Data(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-lighting0", withExtension: "bin")!))
 

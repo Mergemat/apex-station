@@ -799,6 +799,9 @@ private struct LightingPanel: View {
                     .font(.system(size: 12.5))
                 }
             }
+            SettingRow(title: "Vibration light effect", detail: "The lights flash along when the grips vibrate.") {
+                GlowToggle(isOn: Binding(get: { l.gripSync }, set: { on in Task { await service.editLighting { $0.setGripSync(on) } } }))
+            }
             if l.mode != .off {
                 ValueSlider(title: "Brightness", range: 0...100, unit: "%", value: l.brightness) { v in Task { await service.editLighting { $0.setBrightness(v) } } }
                 if l.mode != .steady {
