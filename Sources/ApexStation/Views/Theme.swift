@@ -23,6 +23,8 @@ enum Theme {
     static let titleFont = Font.system(size: 22, weight: .semibold)
     /// Row and card titles.
     static let headingFont = Font.system(size: 14, weight: .semibold)
+    /// Section labels inside panels and cards.
+    static let sectionFont = Font.system(size: 13, weight: .semibold)
     /// Notes and explanations.
     static let bodyFont = Font.system(size: 13)
     /// Buttons, chips and menus.
@@ -105,10 +107,9 @@ struct Caption: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10.5, weight: .semibold))
-            .tracking(1.6)
-            .foregroundStyle(Theme.label)
+        Text(text)
+            .font(Theme.sectionFont)
+            .foregroundStyle(Theme.secondary)
     }
 }
 

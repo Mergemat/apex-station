@@ -103,7 +103,7 @@ struct ControllerDrawing: View {
         label(&ctx, "RB", at: ControllerArt.rbLabel, size: 10, color: b.contains(.rightBumper) ? .white : .white.opacity(0.8))
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
-        caption(&ctx, "BACK", CGPoint(x: 250, y: 426))
+        caption(&ctx, "Back", CGPoint(x: 250, y: 426))
         for (shape, key, name, on) in [(L.m2, FlydigiKey.m2, "M2", b.contains(.m2)), (L.m4, .m4, "M4", b.contains(.m4)),
                                        (L.m1, .m1, "M1", b.contains(.m1)), (L.m3, .m3, "M3", b.contains(.m3))] {
             self.key(&ctx, shape, name, on, remap: remaps[.key(key)])
@@ -259,7 +259,7 @@ struct ControllerDrawing: View {
     }
 
     private func caption(_ ctx: inout GraphicsContext, _ text: String, _ at: CGPoint) {
-        label(&ctx, text, at: at, size: 9, weight: .semibold, tracking: 2.4, color: Theme.label)
+        label(&ctx, text, at: at, size: 10, weight: .semibold, color: Theme.label)
     }
 
     // MARK: - Labels

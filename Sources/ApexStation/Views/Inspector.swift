@@ -11,9 +11,9 @@ struct Inspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Caption(subtitle)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(Theme.titleFont)
+                    Text(subtitle).font(Theme.detailFont).foregroundStyle(Theme.label)
                 }
                 Spacer()
                 Button(action: close) {

@@ -55,7 +55,7 @@ struct RootView: View {
         HStack(spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.horizontal.fill").foregroundStyle(Theme.accent)
-                Text("APEX STATION").font(.system(size: 13, weight: .heavy)).tracking(3)
+                Text("Apex Station").font(Theme.headingFont)
             }
             Spacer()
             ProfileSwitcher()
