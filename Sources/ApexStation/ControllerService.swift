@@ -141,6 +141,8 @@ final class ControllerService {
     }
 
     private func reloadLighting(_ slot: Int) async {
+        let active = activeProfile
+        defer { Task { await switchBack(to: active) } }
         let box = AssemblerBox(command: .readLighting)
         guard (try? await channel.collect(Flydigi.readLighting(slot)) { box.add($0) }) != nil,
               let r = box.result, let l = Lighting(slot: r.slot, bytes: r.bytes) else { return }
@@ -245,6 +247,8 @@ final class ControllerService {
     }
 
     private func reloadProfile(_ slot: Int) async {
+        let active = activeProfile
+        defer { Task { await switchBack(to: active) } }
         let box = AssemblerBox()
         guard (try? await channel.collect(Flydigi.readProfile(slot)) { box.add($0) }) != nil,
               let r = box.result, let p = Profile(slot: r.slot, bytes: r.bytes) else { return }
@@ -264,8 +268,21 @@ final class ControllerService {
         }
     }
 
+    /// Reading a profile makes it the controller's active one (Space Station switches back after
+    /// reading too), so after reads this puts the profile the user was on back.
+    private func switchBack(to slot: Int?) async {
+        guard let slot else { return }
+        await loadActiveProfile()
+        if activeProfile != slot {
+            _ = try? await channel.request(Flydigi.applyProfile(slot))
+            await loadActiveProfile()
+        }
+    }
+
     private func loadProfiles() async {
         await loadActiveProfile()
+        let active = activeProfile
+        defer { Task { await switchBack(to: active) } }
         var loaded: [Profile] = []
         for slot in 0..<4 {
             let box = AssemblerBox()

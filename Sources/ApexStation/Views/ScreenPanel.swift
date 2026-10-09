@@ -86,14 +86,21 @@ struct ScreenPanel: View {
             Note("Done. Press the power button on the back of the controller to restart it, and the new screen shows.")
         case .failed(let message)?:
             Text(message).font(.system(size: 11.5)).foregroundStyle(.orange)
+        case nil where service.connected && !viaReceiver:
+            Note("Uploading goes through Flydigi's 2.4 GHz receiver, like on Windows. Plug the receiver in and switch the controller to 2.4G mode.")
         case nil:
             Text("The controller plays frames at its own speed. Up to \(Screen.maxFrames) frames.")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.label)
         }
     }
 
+    /// Uploads go through Flydigi's 2.4 GHz receiver: Space Station sends them to the radio, in
+    /// 64-byte packets the cable's 32-byte settings interface can't carry, and over the cable the
+    /// controller ignores them.
+    private var viaReceiver: Bool { service.info?.connection == .wireless }
+
     private func uploadButton(title: String, primary: Bool = true, action: @escaping () async -> Void) -> some View {
-        let enabled = service.connected && !service.saving
+        let enabled = service.connected && viaReceiver && !service.saving
         return Button { Task { await action() } } label: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
