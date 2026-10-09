@@ -20,7 +20,7 @@ struct AppIconView: View {
                                                  center: CGPoint(x: 512 * s, y: 600 * s), startRadius: 0, endRadius: 430 * s))
 
             // The controller, in ControllerDrawing's 500-wide space, scaled to ~700 pt wide.
-            let shell = ApexOutline.path(width: 500, origin: CGPoint(x: 0, y: ControllerLayout.bodyTop))
+            let shell = ControllerLayout.body
             let box = shell.boundingRect
             let k = 700 * s / box.width
             let t = CGAffineTransform(translationX: 512 * s, y: 512 * s).scaledBy(x: k, y: k).translatedBy(x: -box.midX, y: -box.midY)
