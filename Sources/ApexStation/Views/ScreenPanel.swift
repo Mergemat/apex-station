@@ -9,35 +9,41 @@ import UniformTypeIdentifiers
 struct ScreenPanel: View {
     @Environment(ControllerService.self) private var service
     @ViewState private var source: SourceAnimation?
-    @ViewState private var crop = Crop()
-    @ViewState private var first = 0
-    @ViewState private var last = 0
+    @ViewState private var selection: ScreenSelection?
+    /// The picture being framed in the crop window.
+    @ViewState private var cropping: SourceAnimation?
     @ViewState private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Caption("Animation")
-            if let source {
-                CropEditor(source: source, crop: $crop, range: first...last, period: source.period)
-                cropControls(source)
+            if let source, let selection {
+                GeometryReader { geo in
+                    ScreenPreview(source: source, selection: selection, scale: geo.size.width / CGFloat(Screen.width))
+                }
+                .aspectRatio(2, contentMode: .fit)
+                HStack(spacing: 8) {
+                    smallButton("Edit crop", icon: "crop") { cropping = source }
+                    smallButton("Choose another", icon: "photo") { choose() }
+                }
             } else {
                 placeholder
+                smallButton("Choose picture or GIF", icon: "photo") { choose() }
             }
-            Button { choose() } label: {
-                Label(source == nil ? "Choose picture or GIF" : "Choose another", systemImage: "photo")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    .glass(.capsule, interactive: true)
-            }
-            .buttonStyle(.plain)
             if let problem { Text(problem).font(.system(size: 11.5)).foregroundStyle(.orange) }
-            if let source {
+            if let source, let selection {
                 uploadButton(title: "Put it on the controller") {
-                    let frames = (first...last).map { source.encoded(frame: $0, crop: crop) }
+                    let frames = (selection.first...selection.last).map { source.encoded(frame: $0, crop: selection.crop) }
                     await service.uploadScreen(frames)
                 }
             }
             status
+        }
+        .sheet(item: $cropping) { item in
+            ScreenCropSheet(source: item, initial: selection ?? .initial(for: item)) { chosen in
+                source = item
+                selection = chosen
+            }
         }
         if service.defaultScreenFile != nil {
             VStack(alignment: .leading, spacing: 10) {
@@ -72,27 +78,14 @@ struct ScreenPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
     }
 
-    @ViewBuilder private func cropControls(_ source: SourceAnimation) -> some View {
-        HStack(spacing: 8) {
-            ChipPicker(options: [true, false], selection: crop.fills, label: { $0 ? "Fill" : "Fit" }) { fills in
-                crop = Crop(fills: fills)
-            }
-            Spacer()
-            Text("Drag to move").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+    private func smallButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 12.5, weight: .semibold))
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .glass(.capsule, interactive: true)
         }
-        ValueSlider(title: "Zoom", range: 100...400, unit: "%", value: Int(crop.zoom * 100)) { v in crop.zoom = Double(v) / 100 }
-        if source.count > 1 {
-            ValueSlider(title: "First frame", range: 1...Double(source.count), value: first + 1) { v in
-                first = min(v - 1, last)
-                last = min(last, first + Screen.maxFrames - 1)
-            }
-            ValueSlider(title: "Last frame", range: 1...Double(source.count), value: last + 1) { v in
-                last = max(v - 1, first)
-                first = max(first, last - Screen.maxFrames + 1)
-            }
-            Text("\(last - first + 1) of \(source.count) frames (up to \(Screen.maxFrames)). The controller plays them at its own speed.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.label)
-        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var status: some View {
@@ -137,47 +130,22 @@ struct ScreenPanel: View {
             problem = "Couldn't read that image."
             return
         }
-        source = animation
         problem = nil
-        crop = Crop()
-        first = 0
-        last = min(animation.count, Screen.maxFrames) - 1
-    }
-}
-
-/// How a picture is framed on the 160×80 screen: fill or fit, zoom on top of that, and an offset
-/// in screen pixels from centred.
-struct Crop: Equatable {
-    var fills = true
-    var zoom = 1.0
-    var offset = CGSize.zero
-
-    /// The image's size on the screen, in screen pixels.
-    func size(of image: CGSize) -> CGSize {
-        let w = CGFloat(Screen.width), h = CGFloat(Screen.height)
-        let base = fills ? max(w / image.width, h / image.height) : min(w / image.width, h / image.height)
-        return CGSize(width: image.width * base * zoom, height: image.height * base * zoom)
-    }
-
-    /// Where the image goes on the screen (y down), with the offset kept so the image can't be
-    /// dragged further than its own edge.
-    func rect(for image: CGSize) -> CGRect {
-        let s = size(of: image)
-        let w = CGFloat(Screen.width), h = CGFloat(Screen.height)
-        let maxX = abs(s.width - w) / 2, maxY = abs(s.height - h) / 2
-        let dx = min(max(offset.width, -maxX), maxX), dy = min(max(offset.height, -maxY), maxY)
-        return CGRect(x: (w - s.width) / 2 + dx, y: (h - s.height) / 2 + dy, width: s.width, height: s.height)
+        selection = nil
+        cropping = animation
     }
 }
 
 /// The chosen picture or GIF, with its frames and timing.
-struct SourceAnimation {
+struct SourceAnimation: Identifiable {
+    let id = UUID()
     let name: String
     let frames: [CGImage]
     /// Time per frame from the GIF, in 100 ms steps (1 for still pictures).
     let period: Int
 
     var count: Int { frames.count }
+    var size: CGSize { CGSize(width: frames[0].width, height: frames[0].height) }
 
     init?(url: URL) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -197,66 +165,29 @@ struct SourceAnimation {
         period = max(1, min(20, Int((average * 10).rounded())))
     }
 
-    /// Frame `i` drawn on a black 160×80 canvas as `crop` frames it.
-    func render(frame i: Int, crop: Crop) -> (image: CGImage, rgba: [UInt8])? {
+    /// Frame `i` with `crop` (in image pixels) drawn over a black 160×80 canvas.
+    func render(frame i: Int, crop: CGRect) -> (image: CGImage, rgba: [UInt8])? {
         let w = Screen.width, h = Screen.height
         let image = frames[i]
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
         let made = rgba.withUnsafeMutableBytes { buf -> CGImage? in
-            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            guard crop.width > 0, let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
             ctx.setFillColor(CGColor(gray: 0, alpha: 1))
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
             ctx.interpolationQuality = .high
-            let r = crop.rect(for: CGSize(width: image.width, height: image.height))
-            // CoreGraphics is y up.
-            ctx.draw(image, in: CGRect(x: r.minX, y: CGFloat(h) - r.maxY, width: r.width, height: r.height))
+            let scale = CGFloat(w) / crop.width
+            let drawn = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+            // CoreGraphics is y up; the crop is y down.
+            ctx.draw(image, in: CGRect(x: -crop.minX * scale, y: CGFloat(h) - drawn.height + crop.minY * scale,
+                                       width: drawn.width, height: drawn.height))
             return ctx.makeImage()
         }
         return made.map { ($0, rgba) }
     }
 
-    func encoded(frame i: Int, crop: Crop) -> [UInt8] {
+    func encoded(frame i: Int, crop: CGRect) -> [UInt8] {
         Screen.frame(rgba: render(frame: i, crop: crop)?.rgba ?? [UInt8](repeating: 0, count: Screen.width * Screen.height * 4))
-    }
-}
-
-/// Frames the picture in the screen's exact 160×80 pixels, shown at a whole-number scale so what
-/// you see is what the controller gets. Drag to move; plays the chosen frames at the chosen speed.
-private struct CropEditor: View {
-    let source: SourceAnimation
-    @Binding var crop: Crop
-    let range: ClosedRange<Int>
-    let period: Int
-    @ViewState private var dragStart: CGSize?
-
-    var body: some View {
-        GeometryReader { geo in
-            let scale = max(1, floor(geo.size.width / CGFloat(Screen.width)))
-            TimelineView(.animation(minimumInterval: Double(period) / 10, paused: range.count < 2)) { t in
-                let i = range.lowerBound + Int(t.date.timeIntervalSinceReferenceDate * 10 / Double(period)) % range.count
-                if let frame = source.render(frame: i, crop: crop)?.image {
-                    Image(decorative: frame, scale: 1).resizable().interpolation(.none)
-                        .frame(width: CGFloat(Screen.width) * scale, height: CGFloat(Screen.height) * scale)
-                }
-            }
-            .frame(width: CGFloat(Screen.width) * scale, height: CGFloat(Screen.height) * scale)
-            .clipShape(.rect(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.stroke))
-            .frame(maxWidth: .infinity)
-            .contentShape(.rect)
-            .gesture(DragGesture()
-                .onChanged { g in
-                    let start = dragStart ?? crop.offset
-                    dragStart = start
-                    let s = crop.size(of: CGSize(width: source.frames[0].width, height: source.frames[0].height))
-                    let maxX = abs(s.width - CGFloat(Screen.width)) / 2, maxY = abs(s.height - CGFloat(Screen.height)) / 2
-                    crop.offset = CGSize(width: min(max(start.width + g.translation.width / scale, -maxX), maxX),
-                                         height: min(max(start.height + g.translation.height / scale, -maxY), maxY))
-                }
-                .onEnded { _ in dragStart = nil })
-        }
-        .aspectRatio(2, contentMode: .fit)
     }
 }

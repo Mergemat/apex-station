@@ -18,6 +18,14 @@ enum RenderCommands {
             if let image = renderer.cgImage { write(image, to: args[i + 1]) }
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-crop"), args.count > i + 2,
+           let source = SourceAnimation(url: URL(fileURLWithPath: args[i + 1])) {
+            let view = ScreenCropSheet(source: source, initial: .initial(for: source)) { _ in }
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            if let image = renderer.cgImage { write(image, to: args[i + 2]) }
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--render-curve"), args.count > i + 1 {
             let config = StickConfig(curve: .custom, deadZone: 12, edge: 15, point1: .init(x: 40, y: 20), point2: .init(x: 90, y: 100))
             let view = CurveEditor(config: config, position: StickPosition(x: 18000, y: 9000), live: true) { _ in }
