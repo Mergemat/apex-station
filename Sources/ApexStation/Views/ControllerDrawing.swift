@@ -162,7 +162,9 @@ struct ControllerDrawing: View {
     }
 
     private static let bodyEdge: [CGPoint] = [
-        (0.1231, 0.1019), (0.1401, 0.0772), (0.1570, 0.0713), (0.1740, 0.0611), (0.1910, 0.0526),
+        // Starts outside the shell at the bottom of the step where the bumper ends, so nothing of
+        // the bumper runs down the side.
+        (0.1000, 0.0846), (0.1334, 0.0846), (0.1570, 0.0713), (0.1740, 0.0611), (0.1910, 0.0526),
         (0.2080, 0.0441), (0.2250, 0.0374), (0.2419, 0.0323), (0.2589, 0.0272), (0.2759, 0.0229),
         (0.2929, 0.0195), (0.3098, 0.0170), (0.3268, 0.0153), (0.3438, 0.0110), (0.3600, 0.0060),
     ].map { CGPoint(x: $0.0 * 500, y: bodyTop + $0.1 * 500) }
