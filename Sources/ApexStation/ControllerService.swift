@@ -144,10 +144,19 @@ final class ControllerService {
     private func refreshUI() async {
         var lastCount = channel.live.snapshot().count
         var lastRateAt = ContinuousClock.now
+        // Turbo and Fn are combo keys: the controller only reports them as a brief pulse when
+        // they're released on their own, so their highlight is held long enough to see.
+        var pulseUntil: [UInt32: ContinuousClock.Instant] = [:]
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(16))
             let snap = channel.live.snapshot()
-            if live, snap.state != state { state = snap.state }
+            var shown = snap.state
+            let now = ContinuousClock.now
+            for key in [GamepadButtons.turbo, .fn] {
+                if snap.state.buttons.contains(key) { pulseUntil[key.rawValue] = now + .milliseconds(500) }
+                if let until = pulseUntil[key.rawValue], until > now { shown.buttons.insert(key) }
+            }
+            if live, shown != state { state = shown }
             if ContinuousClock.now - lastRateAt >= .seconds(1) {
                 reportRate = live ? snap.count - lastCount : 0
                 lastCount = snap.count
