@@ -458,10 +458,10 @@ struct MacroRecorderTests {
         // Last chunk: offset 984 × 26 = 25584 = 0x63F0, 20 bytes then zeros, 31 bytes in all.
         let last = packets[985]
         #expect(last.bytes.count == 31 && Array(last.bytes[0..<4]) == [0xA5, 0xD1, 0x63, 0xF0])
-        // End: frame 1; sum D2+07+01+01+64+04 = 0x14B → 0x4B.
-        #expect(packets[986].bytes == [0xA5, 0xD2, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x4B, 0, 0, 0, 0, 0, 0])
-        // Finish: 1 frame; sum D3+07+01+01+64+04 = 0x14C → 0x4C.
-        #expect(packets[987].bytes.prefix(9) == [0xA5, 0xD3, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x4C])
+        // End: frame 1; sum D2+07+01+01+64+04 = 0x143 → 0x43.
+        #expect(packets[986].bytes == [0xA5, 0xD2, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x43, 0, 0, 0, 0, 0, 0])
+        // Finish: 1 frame; sum D3+07+01+01+64+04 = 0x144 → 0x44.
+        #expect(packets[987].bytes.prefix(9) == [0xA5, 0xD3, 0x07, 0x01, 0x01, 0x64, 0x04, 0x00, 0x44])
     }
 
     @Test func chunkChecksumCoversEverythingAfterA5() {
