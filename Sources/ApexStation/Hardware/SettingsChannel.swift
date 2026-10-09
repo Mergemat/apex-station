@@ -229,12 +229,28 @@ final class LiveInput: @unchecked Sendable {
     private var gapSum: UInt64 = 0
     private var gapMax: UInt64 = 0
     private var gaps = 0
+    /// Every change in which buttons are down, timed as it arrived, for the input log.
+    private var digital: UInt32 = 0
+    private var changes: [(at: UInt64, digital: UInt32)] = []
+
+    /// Bit for "trigger pulled past halfway", above the `GamepadButtons` bits.
+    static let leftTriggerBit: UInt32 = 1 << 30, rightTriggerBit: UInt32 = 1 << 31
+
+    static func digital(_ s: GamepadState) -> UInt32 {
+        s.buttons.rawValue | (s.leftTrigger >= 128 ? leftTriggerBit : 0) | (s.rightTrigger >= 128 ? rightTriggerBit : 0)
+    }
 
     func update(_ s: GamepadState) {
         let now = DispatchTime.now().uptimeNanoseconds
         lock.lock(); defer { lock.unlock() }
         state = s
         count += 1
+        let d = Self.digital(s)
+        if d != digital {
+            digital = d
+            changes.append((now, d))
+            if changes.count > 512 { changes.removeFirst(changes.count - 512) }
+        }
         if let lastAt {
             let gap = now - lastAt
             gapSum += gap
@@ -242,6 +258,13 @@ final class LiveInput: @unchecked Sendable {
             gaps += 1
         }
         lastAt = now
+    }
+
+    /// Button changes since the last call: when (uptime ns) and which buttons were then down.
+    func takeChanges() -> [(at: UInt64, digital: UInt32)] {
+        lock.lock(); defer { lock.unlock() }
+        defer { changes = [] }
+        return changes
     }
 
     /// Average and longest gap between reports (ms) since the last call, then starts over.

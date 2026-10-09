@@ -22,6 +22,22 @@ final class ControllerService {
     private(set) var live = false
     /// Input reports per second while live.
     private(set) var reportRate = 0
+    /// Buttons going down and up, newest first, for the input test.
+    private(set) var inputLog = InputLog()
+
+    func clearInputLog() { inputLog.clear() }
+
+    /// What a button acts as right now: its keyboard & mouse key, or its remap in the active profile.
+    func actsAs(_ key: FlydigiKey) -> String? {
+        if keyboardMouseOn, let out = keyboardMouseMap[key] { return out.label }
+        return switch editingProfile?.mapping(for: key) {
+        case .button(let k)?: k.shortName
+        case .macro?: "macro"
+        case .keyboardOrMouse?: "keyboard/mouse"
+        default: nil
+        }
+    }
+
     /// Average and longest gap between reports over the last second, in ms.
     private(set) var reportTiming: (average: Double, longest: Double)?
     /// Settings stored on the controller.
@@ -559,6 +575,8 @@ final class ControllerService {
                 lastCount = source.snapshot().count
             }
             let snap = source.snapshot()
+            let changes = source.takeChanges()
+            if live, !changes.isEmpty { inputLog.add(changes, actsAs: actsAs) }
             var shown = snap.state
             let now = ContinuousClock.now
             for key in [GamepadButtons.turbo, .fn] {
