@@ -32,6 +32,8 @@ final class SettingsChannel: @unchecked Sendable {
     private let lock = NSLock()
     private var device: IOHIDDevice?
     private var waiting: [UInt8: [(id: UUID, cont: CheckedContinuation<[UInt8], Error>)]] = [:]
+    /// Multi-reply requests: every reply for the command goes to `take` until it returns true.
+    private var collectors: [UInt8: (id: UUID, take: ([UInt8]) -> Bool, cont: CheckedContinuation<Void, Error>)] = [:]
 
     init() {
         (eventStream, events) = AsyncStream.makeStream(of: Event.self, bufferingPolicy: .bufferingNewest(16))
@@ -60,6 +62,32 @@ final class SettingsChannel: @unchecked Sendable {
                 if let error = sendNow(frame) { resolve(command, id, .failure(error)) }
             }
         }
+    }
+
+    /// Sends a command whose answer comes as several replies, handing each to `take` until it
+    /// returns true (for example once every chunk of a profile has arrived).
+    func collect(_ frame: Data, timeout: Duration = .seconds(3), take: @escaping @Sendable ([UInt8]) -> Bool) async throws {
+        let command = frame[frame.startIndex + 2]
+        let id = UUID()
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            lock.withLock { collectors[command] = (id, take, cont) }
+            let ms = Int(timeout.components.seconds * 1000) + Int(timeout.components.attoseconds / 1_000_000_000_000_000)
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(ms)) { [self] in
+                finishCollect(command, id, .failure(Timeout()))
+            }
+            sendQueue.async { [self] in
+                if let error = sendNow(frame) { finishCollect(command, id, .failure(error)) }
+            }
+        }
+    }
+
+    private func finishCollect(_ command: UInt8, _ id: UUID, _ result: Result<Void, Error>) {
+        let cont = lock.withLock { () -> CheckedContinuation<Void, Error>? in
+            guard let c = collectors[command], c.id == id else { return nil }
+            collectors[command] = nil
+            return c.cont
+        }
+        cont?.resume(with: result)
     }
 
     /// Sends a command that has no reply.
@@ -122,6 +150,9 @@ final class SettingsChannel: @unchecked Sendable {
             guard self.device === device else { return nil }
             self.device = nil
             defer { waiting = [:] }
+            let pendingCollectors = collectors.values.map(\.cont)
+            collectors = [:]
+            pendingCollectors.forEach { $0.resume(throwing: Disconnected()) }
             return waiting.values.flatMap { $0.map(\.cont) }
         }
         guard let pending else { return }
@@ -133,6 +164,10 @@ final class SettingsChannel: @unchecked Sendable {
         guard let command = Flydigi.command(of: report) else { return }
         if command == Flydigi.Command.input.rawValue {
             if let state = FlydigiInputReport.parse(report) { live.update(state) }
+            return
+        }
+        if let c = lock.withLock({ collectors[command] }) {
+            if c.take(report) { finishCollect(command, c.id, .success(())) }
             return
         }
         Log.settings.notice("in: \(report.prefix(12).map { String(format: "%02x", $0) }.joined(separator: " "), privacy: .public)")

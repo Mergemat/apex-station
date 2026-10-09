@@ -132,3 +132,82 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
         #expect([UInt8](Flydigi.setSleep(minutes: 180))[0..<6] == [0x5A, 0xA5, 0x17, 0x03, 0xB4, 0xCE])
     }
 }
+
+@Suite struct ProfileTests {
+    /// Profile 0 read from the user's Apex 5 (2026-10-09), and the raw A3 replies it came from.
+    let record = try! [UInt8](Data(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-profile0", withExtension: "bin")!))
+    let replies = try! String(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-profile0-replies", withExtension: "txt")!, encoding: .utf8)
+
+    @Test func assemblesTheRealReplyChunks() throws {
+        var assembler = ProfileAssembler()
+        var result: (slot: Int, bytes: [UInt8])?
+        for line in replies.split(separator: "\n") where line.hasPrefix("in ") {
+            let hex = line.split(separator: ":", maxSplits: 1)[1]
+            if let r = assembler.add(bytes(String(hex).trimmingCharacters(in: .whitespaces))) { result = r }
+        }
+        let r = try #require(result)
+        #expect(r.slot == 0)
+        #expect(r.bytes == record)
+    }
+
+    @Test func decodesTheRealButtonRemaps() throws {
+        let p = try #require(Profile(slot: 0, bytes: record))
+        #expect(p.formatVersion == "3.1")
+        #expect(p.name == "配置1")
+        // Matches what the controller sent over Xbox mode on day one: paddles act as triggers/bumpers.
+        #expect(p.mapping(for: .m1) == .button(.rt))
+        #expect(p.mapping(for: .m2) == .button(.lt))
+        #expect(p.mapping(for: .m3) == .button(.rb))
+        #expect(p.mapping(for: .m4) == .button(.lb))
+        #expect(p.mapping(for: .lm) == .button(.l3))
+        #expect(p.mapping(for: .rm) == .button(.r3))
+        #expect(p.mapping(for: .a) == .standard)
+        #expect(p.remapped.count == 6)
+        #expect(p.turbo(for: .a) == nil)
+    }
+
+    @Test func remapEncodesLikeSpaceStation() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setMapping(.button(.b), for: .a)
+        #expect(p.mapping(for: .a) == .button(.b))
+        #expect(p.bytes[13 + 4 * 3..<13 + 4 * 3 + 3] == [5, 0, 0]) // target B, no turbo
+        p.setMapping(.standard, for: .m1)
+        #expect(p.bytes[13 + 18 * 3..<13 + 18 * 3 + 3] == [0xFF, 0, 0]) // the controller's own encoding
+        // Remapping a button to itself is the same as no remap.
+        p.setMapping(.button(.y), for: .y)
+        #expect(p.mapping(for: .y) == .standard)
+    }
+
+    @Test func turboKeepsTheTarget() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setTurbo((.hold, 10), for: .a)
+        #expect(p.turbo(for: .a)?.mode == .hold && p.turbo(for: .a)?.speed == 10)
+        #expect(p.mapping(for: .a) == .standard)
+        p.setTurbo(nil, for: .a)
+        #expect(p.turbo(for: .a) == nil)
+    }
+
+    @Test func writeSendsOnlyChangedChunks() throws {
+        let old = try #require(Profile(slot: 1, bytes: record))
+        var new = old
+        new.setMapping(.button(.b), for: .a) // byte 25: chunk 1 only
+        let frames = Flydigi.writeProfile(from: old, to: new).map { [UInt8]($0) }
+        #expect(frames.count == 2)
+        // Start: A4, len 6, slot 1, first chunk 1, one chunk, size 20, sum (A4+06+01+01+01+14)=C1.
+        #expect(frames[0][0..<10] == [0x5A, 0xA5, 0xA4, 0x06, 0x01, 0x01, 0x01, 0x14, 0xC1, 0x00])
+        // Chunk: A5, len 23, index 0, then bytes 20-39 of the new record.
+        #expect(frames[1][0..<5] == [0x5A, 0xA5, 0xA5, 0x17, 0x00])
+        #expect(Array(frames[1][5..<25]) == Array(new.bytes[20..<40]))
+        #expect(Flydigi.writeProfile(from: old, to: old).isEmpty)
+    }
+
+    @Test func readFrameMatchesSpaceStation() {
+        // A3, len 4, slot 0, chunk size 20, sum 0xBB. This exact frame got the replies above.
+        #expect([UInt8](Flydigi.readProfile(0))[0..<7] == [0x5A, 0xA5, 0xA3, 0x04, 0x00, 0x14, 0xBB])
+    }
+
+    @Test func activeProfileFromTheRealReply() {
+        #expect(Flydigi.activeProfile(bytes("04 5a a5 a1 01 00 00 85 02 ff ff 60 98 ff ff")) == 0)
+        #expect(Flydigi.activeProfile(bytes("04 5a a5 a1 01 00 06 85 02")) == 2) // 4-7 mean the same slots
+    }
+}

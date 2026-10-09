@@ -5,19 +5,22 @@ import SwiftUI
 struct RootView: View {
     enum Page: String, CaseIterable, Identifiable {
         case controller = "Controller"
+        case buttons = "Buttons"
         case sticks = "Sticks"
         case device = "Device"
         var id: Self { self }
         var icon: String {
             switch self {
             case .controller: "gamecontroller.fill"
+            case .buttons: "square.grid.2x2"
             case .sticks: "circle.circle"
             case .device: "slider.horizontal.3"
             }
         }
     }
 
-    @ViewState private var page: Page = .controller
+    /// `-startPage <name>` on the command line opens a specific tab (used for screenshots).
+    @ViewState private var page: Page = UserDefaults.standard.string(forKey: "startPage").flatMap { Page(rawValue: $0.capitalized) } ?? .controller
     @Namespace private var tabs
 
     var body: some View {
@@ -31,6 +34,7 @@ struct RootView: View {
                     Group {
                         switch page {
                         case .controller: ControllerPage()
+                        case .buttons: ButtonsPage()
                         case .sticks: SticksPage()
                         case .device: DevicePage()
                         }

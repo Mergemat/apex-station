@@ -20,6 +20,11 @@ public enum Flydigi {
         case setDataStreams = 0x11
         case rumble = 0x12
         case acquire = 0x1C
+        case readProfileVersions = 0xA1
+        case applyProfile = 0xA2
+        case readProfile = 0xA3
+        case writeProfileStart = 0xA4
+        case writeProfileChunk = 0xA5
         /// Live input report, controller → host.
         case input = 0xEF
         /// Raw sensor data, controller → host.

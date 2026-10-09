@@ -21,6 +21,9 @@ final class ControllerService {
     private(set) var reportRate = 0
     /// Settings stored on the controller.
     private(set) var settings: DeviceSettings?
+    /// The controller's four on-board profiles, and which one is active.
+    private(set) var profiles: [Profile] = []
+    private(set) var activeProfile: Int?
 
     @ObservationIgnored var started = false
     @ObservationIgnored private let channel = SettingsChannel()
@@ -59,6 +62,35 @@ final class ControllerService {
         }
     }
 
+    /// Makes `slot` the active profile, like the controller's Fast Swap.
+    func useProfile(_ slot: Int) async {
+        _ = try? await channel.request(Flydigi.applyProfile(slot))
+        await loadActiveProfile()
+    }
+
+    private func loadActiveProfile() async {
+        if let reply = try? await channel.request(Flydigi.readProfileVersions()) {
+            activeProfile = Flydigi.activeProfile(reply)
+        }
+    }
+
+    private func loadProfiles() async {
+        await loadActiveProfile()
+        var loaded: [Profile] = []
+        for slot in 0..<4 {
+            let box = AssemblerBox()
+            do {
+                try await channel.collect(Flydigi.readProfile(slot)) { reply in box.add(reply) }
+            } catch {
+                Log.settings.error("reading profile \(slot) failed")
+                continue
+            }
+            if let r = box.result, let p = Profile(slot: r.slot, bytes: r.bytes) { loaded.append(p) }
+        }
+        profiles = loaded
+        ProfileBackup.save(loaded)
+    }
+
     func testRumble() async {
         try? await channel.send(Flydigi.frame(.rumble, [0xC0, 0xC0, 0, 0]))
         try? await Task.sleep(for: .milliseconds(350))
@@ -85,6 +117,8 @@ final class ControllerService {
                 if let reply = try? await channel.request(Flydigi.acquire(true)) {
                     live = Flydigi.acquireGranted(reply) ?? false
                 }
+                // The controller can switch profiles itself (Fn + a face button), so keep up.
+                await loadActiveProfile()
                 // Well inside the controller's ~15 s release timeout.
                 try? await Task.sleep(for: .seconds(5))
             }
@@ -110,11 +144,14 @@ final class ControllerService {
                 await loadInfo()
                 await loadStatus()
                 await loadSettings()
+                await loadProfiles()
                 if liveViewers > 0 { beginLive() }
             case .disconnected:
                 connected = false
                 info = nil
                 settings = nil
+                profiles = []
+                activeProfile = nil
                 fullControllerEnabled = nil
                 keepAlive?.cancel()
                 keepAlive = nil
@@ -162,6 +199,50 @@ final class ControllerService {
                 lastCount = snap.count
                 lastRateAt = .now
             }
+        }
+    }
+}
+
+/// Collects a profile's chunks as they arrive on the channel's thread.
+private final class AssemblerBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var assembler = ProfileAssembler()
+    private(set) var result: (slot: Int, bytes: [UInt8])?
+
+    /// Returns true once the whole profile has arrived.
+    func add(_ reply: [UInt8]) -> Bool {
+        lock.withLock {
+            if let r = assembler.add(reply) { result = r }
+            return result != nil
+        }
+    }
+}
+
+/// Keeps a copy of every profile read from the controller, so nothing written later can be lost.
+/// Backups live in ~/Library/Application Support/Apex Station/Backups/<date>/profile-<slot>.bin;
+/// a new folder is only made when something changed since the last one.
+enum ProfileBackup {
+    static var folder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Apex Station/Backups", isDirectory: true)
+    }
+
+    static func save(_ profiles: [Profile]) {
+        guard !profiles.isEmpty else { return }
+        let fm = FileManager.default
+        let latest = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))?
+            .filter(\.hasDirectoryPath).sorted { $0.lastPathComponent < $1.lastPathComponent }.last
+        if let latest, profiles.allSatisfy({ (try? Data(contentsOf: latest.appendingPathComponent("profile-\($0.slot).bin"))) == Data($0.bytes) }) {
+            return
+        }
+        let stamp = ISO8601DateFormatter.string(from: .now, timeZone: .current, formatOptions: [.withFullDate, .withTime, .withDashSeparatorInDate])
+        let dir = folder.appendingPathComponent(stamp, isDirectory: true)
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            for p in profiles { try Data(p.bytes).write(to: dir.appendingPathComponent("profile-\(p.slot).bin")) }
+            Log.settings.notice("backed up \(profiles.count) profiles to \(dir.path, privacy: .public)")
+        } catch {
+            Log.settings.error("profile backup failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

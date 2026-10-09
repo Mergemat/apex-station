@@ -16,6 +16,6 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
             ]
         ),
-        .testTarget(name: "ApexKitTests", dependencies: ["ApexKit"]),
+        .testTarget(name: "ApexKitTests", dependencies: ["ApexKit"], resources: [.copy("Fixtures")]),
     ]
 )
