@@ -142,7 +142,6 @@ final class SettingsChannel: @unchecked Sendable {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, [
             kIOHIDVendorIDKey: Flydigi.vendorID,
-            kIOHIDProductIDKey: Flydigi.apex5ProductID,
             kIOHIDPrimaryUsagePageKey: Int(Flydigi.usagePage),
         ] as CFDictionary)
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -158,6 +157,8 @@ final class SettingsChannel: @unchecked Sendable {
     }
 
     private func matched(_ device: IOHIDDevice) {
+        let product = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int ?? 0
+        guard Flydigi.hasSettings(productID: product) else { return }
         let isNew = lock.withLock { () -> Bool in
             guard self.device == nil else { return false }
             self.device = device

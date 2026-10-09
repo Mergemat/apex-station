@@ -10,6 +10,13 @@ public enum Flydigi {
     public static let vendorID: UInt32 = 0x37D7
     public static let apex5ProductID: UInt32 = 0x2501
     public static let usagePage: UInt16 = 0xFFA0
+
+    /// Space Station's rule for which Flydigi devices carry the settings interface: product IDs
+    /// 0x2xxx except 0x28xx. That covers the Apex 5 on the cable (0x2501) and through Flydigi's
+    /// 2.4 GHz receiver.
+    public static func hasSettings(productID: Int) -> Bool {
+        productID >> 12 == 2 && productID & 0xFF00 != 0x2800
+    }
     public static let commandReportID: UInt8 = 3
     public static let replyReportID: UInt8 = 4
     public static let frameSize = 31

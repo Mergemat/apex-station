@@ -397,6 +397,13 @@ struct MacroRecorderTests {
     }
 }
 
+@Suite struct DeviceMatchingTests {
+    @Test(arguments: [(0x2501, true), (0x2412, true), (0x2800, false), (0x28FF, false), (0x1501, false), (0x3501, false)])
+    func settingsInterfaceFollowsSpaceStation(product: Int, expected: Bool) {
+        #expect(Flydigi.hasSettings(productID: product) == expected)
+    }
+}
+
 @Suite struct ScreenTests {
     private func solid(_ r: UInt8, _ g: UInt8, _ b: UInt8) -> [UInt8] {
         [UInt8](repeating: 0, count: Screen.width * Screen.height).flatMap { _ in [r, g, b, 255] }

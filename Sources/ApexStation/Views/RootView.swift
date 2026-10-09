@@ -123,7 +123,7 @@ struct RootView: View {
         let text: String? = if !service.connected && service.bluetooth {
             "Bluetooth shows the controller live. Use the cable to change settings"
         } else if !service.connected {
-            "Plug in your Apex 5 with the USB-C cable, or pair it in PC Bluetooth mode"
+            "Connect your Apex 5: USB-C cable, its 2.4 GHz receiver, or PC Bluetooth mode"
         } else if service.fullControllerEnabled == false {
             "Turn on Full controller in settings to see live input"
         } else if selected == nil {
@@ -231,7 +231,9 @@ private struct StatusBadge: View {
         if service.saving { return "Saving…" }
         if !service.connected && service.bluetooth { return service.live ? "Bluetooth · \(service.reportRate) Hz" : "Bluetooth" }
         if !service.connected { return "No controller" }
-        return service.live ? "\(service.reportRate) Hz" : "Connected"
+        let wireless = service.info?.connection == .wireless
+        if service.live { return wireless ? "2.4 GHz · \(service.reportRate) Hz" : "\(service.reportRate) Hz" }
+        return wireless ? "2.4 GHz receiver" : "Connected"
     }
 }
 
