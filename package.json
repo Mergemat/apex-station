@@ -4,6 +4,7 @@
   "scripts": {
     "test": "bun scripts/swift.ts test",
     "build": "bun scripts/build.ts",
-    "install-app": "bun scripts/build.ts --install"
+    "install-app": "bun scripts/build.ts --install",
+    "release": "bun scripts/build.ts --release"
   }
 }

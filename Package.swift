@@ -12,7 +12,6 @@ let package = Package(
             name: "ApexStation",
             dependencies: ["ApexKit"],
             linkerSettings: [
-                .linkedFramework("CoreHID"),
                 .linkedFramework("ServiceManagement"),
             ]
         ),

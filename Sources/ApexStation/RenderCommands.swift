@@ -12,6 +12,12 @@ enum RenderCommands {
             renderShape(to: args[i + 1], size: CGSize(width: v[0], height: v[1]), origin: CGPoint(x: v[2], y: v[3]), width: v[4])
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-icon"), args.count > i + 2, let px = Double(args[i + 2]) {
+            let renderer = ImageRenderer(content: AppIconView().frame(width: px, height: px))
+            renderer.scale = 1
+            if let image = renderer.cgImage { write(image, to: args[i + 1]) }
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--render-preview"), args.count > i + 1 {
             let scale = args.count > i + 2 ? Double(args[i + 2]) ?? 2 : 2
             renderPreview(to: args[i + 1], scale: scale)
