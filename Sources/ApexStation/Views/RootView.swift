@@ -165,7 +165,9 @@ private struct ProfileSwitcher: View {
                 Button { Task { await service.useProfile(slot) } } label: {
                     HStack(spacing: 6) {
                         Text("\(slot + 1)").font(.system(size: 13, weight: .bold, design: .rounded))
-                        if active, let profile { Text(displayName(profile)).font(Theme.detailFont.weight(.medium)).lineLimit(1) }
+                        if active, let profile, let name = customName(profile) {
+                            Text(name).font(Theme.detailFont.weight(.medium)).lineLimit(1)
+                        }
                     }
                     .foregroundStyle(active ? .white : Theme.secondary)
                     .padding(.horizontal, 14)
@@ -180,7 +182,7 @@ private struct ProfileSwitcher: View {
                 .buttonStyle(.plain)
                 .disabled(!service.connected)
                 .contextMenu {
-                    Button("Rename…") { renaming = slot; newName = profile.map(displayName) ?? "" }
+                    Button("Rename…") { renaming = slot; newName = profile.flatMap(customName) ?? "" }
                     Divider()
                     Button("Save to library") { if let file = service.exportProfile(slot) { library.save(file) } }
                     Button("Saved profiles…") { libraryFor = slot }
@@ -189,7 +191,7 @@ private struct ProfileSwitcher: View {
                     Button("Import…") { importFile(into: slot) }
                     Button("Reset to factory settings…", role: .destructive) { resetting = slot }
                 }
-                .help(profile.map { "Profile \(slot + 1): \(displayName($0))" + ($0.remapped.isEmpty ? "" : " · \($0.remapped.count) remapped") } ?? "Profile \(slot + 1)")
+                .help(profile.map { displayName($0) + ($0.remapped.isEmpty ? "" : " · \($0.remapped.count) remapped") } ?? "Profile \(slot + 1)")
             }
         }
         .padding(4)
@@ -278,10 +280,15 @@ extension ProfileSwitcher {
     }
 }
 
-/// Flydigi names new profiles "配置N" ("Config N").
-func displayName(_ p: Profile) -> String {
-    let name = p.name
-    if name.isEmpty { return "Profile \(p.slot + 1)" }
-    if name.hasPrefix("配置") { return "Config " + name.dropFirst(2) }
+/// The name the user gave a profile, or nil if it still has Flydigi's default ("配置N",
+/// "Config N") or none.
+func customName(_ p: Profile) -> String? {
+    let name = p.name.trimmingCharacters(in: .whitespaces)
+    if name.isEmpty || name.hasPrefix("配置") || name.hasPrefix("Config ") || name == "Profile \(p.slot + 1)" { return nil }
     return name
+}
+
+/// A profile's name for lists and files: its own, or "Profile N".
+func displayName(_ p: Profile) -> String {
+    customName(p) ?? "Profile \(p.slot + 1)"
 }
