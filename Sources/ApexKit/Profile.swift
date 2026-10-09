@@ -64,25 +64,92 @@ public enum TurboMode: UInt8, Sendable, Equatable {
     case off = 0, hold = 1, toggle = 2
 }
 
-/// How a stick responds, as stored in a profile.
+/// How a stick responds, as stored in a profile. Units follow Space Station: dead zone and edge in
+/// percent of travel, curve points 0-127 across the live range on each axis.
 public struct StickConfig: Sendable, Equatable {
     public enum Curve: UInt8, Sendable, CaseIterable { case standard = 0, quick = 1, slow = 2, custom = 3 }
 
+    public struct Point: Sendable, Equatable {
+        public var x: Int
+        public var y: Int
+        public init(x: Int, y: Int) { self.x = x; self.y = y }
+    }
+
     public var curve: Curve
-    /// Centre dead zone, 0-127 (fraction of full deflection × 127).
+    /// Centre dead zone in percent. Negative is an anti-dead zone: output jumps to that much as
+    /// soon as the stick moves.
     public var deadZone: Int
-    /// Where full output is reached, 0-127; lower values reach full output sooner.
+    /// Outer dead zone in percent: full output is reached this far before the rim. Negative caps
+    /// the output at 100 + edge percent instead.
     public var edge: Int
+    /// The two bends of the response curve, between the dead zone and the edge.
+    public var point1: Point
+    public var point2: Point
     /// Circle limits diagonals to the circle; rectangle (the default) lets them reach the corners.
     public var circular: Bool
 
-    public init(curve: Curve, deadZone: Int, edge: Int, circular: Bool) {
+    public init(curve: Curve, deadZone: Int = 0, edge: Int = 0, point1: Point? = nil, point2: Point? = nil, circular: Bool = false) {
+        let preset = Self.points(for: curve == .custom ? .standard : curve)
         self.curve = curve
         self.deadZone = deadZone
         self.edge = edge
+        self.point1 = point1 ?? preset.0
+        self.point2 = point2 ?? preset.1
         self.circular = circular
     }
+
+    /// Space Station's preset bends: Default, Instant (quick) and Delay (slow).
+    public static func points(for curve: Curve) -> (Point, Point) {
+        switch curve {
+        case .quick: (Point(x: 64, y: 96), Point(x: 127, y: 127))
+        case .slow: (Point(x: 64, y: 32), Point(x: 127, y: 127))
+        case .standard, .custom: (Point(x: 64, y: 64), Point(x: 127, y: 127))
+        }
+    }
+
+    /// The curve as a line through four points in percent (travel, output): where output starts,
+    /// the two bends, and where it reaches its maximum.
+    public var polyline: [(x: Double, y: Double)] {
+        let start = (x: Double(max(deadZone, 0)), y: Double(max(-deadZone, 0)))
+        let end = (x: Double(edge > 0 ? 100 - edge : 100), y: Double(edge > 0 ? 100 : 100 + edge))
+        func place(_ p: Point) -> (x: Double, y: Double) {
+            (jsRound(start.x + (end.x - start.x) * Double(p.x) / 127), jsRound(start.y + (end.y - start.y) * Double(p.y) / 127))
+        }
+        return [start, place(point1), place(point2), end]
+    }
+
+    /// What the controller actually follows: output in percent (-50 to 100, below 0 is no output)
+    /// at 0, 12.5, 25 … 100 % of travel, computed exactly as Space Station does.
+    public var samples: [Int] {
+        let line = polyline
+        return (0..<9).map { i in
+            let y = jsRound(Self.output(at: 100 * Double(i) / 8, on: line))
+            return Int(min(100, max(-50, y)))
+        }
+    }
+
+    /// Space Station's lookup along the line, including how it treats vertical steps.
+    private static func output(at x: Double, on w: [(x: Double, y: Double)]) -> Double {
+        let bend = w[1]
+        if w[0].x == bend.x, w[0].y == 0, x == w[0].x { return w[0].y }
+        var out = w[w.count - 1].y
+        for i in (bend.y == 0 ? 2 : 1)..<w.count {
+            let prev = w[i - 1], cur = w[i]
+            guard x <= cur.x else { continue }
+            if x == cur.x, i + 1 < w.count, cur.x == w[i + 1].x, cur.y < w[i + 1].y { return w[i + 1].y }
+            if prev.x == cur.x {
+                out = prev.y == 0 && cur.y != 0 ? (x < prev.x ? prev.y : cur.y) : prev.y
+            } else {
+                out = prev.y + (cur.y - prev.y) * (x - prev.x) / (cur.x - prev.x)
+            }
+            break
+        }
+        return out
+    }
 }
+
+/// JavaScript's Math.round, which Space Station's numbers come from (halves round up).
+private func jsRound(_ v: Double) -> Double { (v + 0.5).rounded(.down) }
 
 /// A trigger's force-feedback effect ("ForceAdapt"). Values are 0-255 unless noted.
 public enum TriggerEffect: Sendable, Equatable {
@@ -233,31 +300,41 @@ public struct Profile: Sendable, Equatable {
         bytes[i + 2] = turbo.speed
     }
 
-    // Sticks: 7 bytes each at 109 (curve type, dead zone, curve point 1 x/y, point 2 x/y, edge) and,
-    // in format 3.1, 12 bytes each at 790 (curve type, 9 custom-curve points, circularity, extra edge).
+    // Sticks: 7 bytes each at 109 (curve type, dead zone %, bend 1 x/y, bend 2 x/y, old edge) and,
+    // in format 3.1, 12 bytes each at 790 (curve type, the 9 curve samples + 50, circularity, edge %).
     private static func stickBase(_ left: Bool) -> Int { 109 + (left ? 0 : 7) }
     private static func stickExtra(_ left: Bool) -> Int { 790 + (left ? 0 : 12) }
 
-    /// Values above 127 are stored as negatives (127 - value), as Space Station reads them.
-    private static func signed(_ b: UInt8) -> Int { b > 127 ? 127 - Int(b) : Int(b) }
+    /// Space Station writes negative percentages as two's complement bytes.
+    private static func signed(_ b: UInt8) -> Int { Int(Int8(bitPattern: b)) }
+    private static func byte(_ v: Int) -> UInt8 { UInt8(bitPattern: Int8(clamping: v)) }
 
     public func stick(left: Bool) -> StickConfig {
         let base = Self.stickBase(left), extra = Self.stickExtra(left)
         return StickConfig(
             curve: StickConfig.Curve(rawValue: bytes[base]) ?? .standard,
             deadZone: Self.signed(bytes[base + 1]),
-            edge: Self.signed(bytes[base + 6]),
+            edge: bytes[extra + 11] == 0xFF ? 0 : Self.signed(bytes[extra + 11]),
+            point1: .init(x: Int(bytes[base + 2]), y: Int(bytes[base + 3])),
+            point2: .init(x: Int(bytes[base + 4]), y: Int(bytes[base + 5])),
             circular: bytes[extra + 10] == 1)
     }
 
+    /// Writes the stick and the nine-point curve the controller follows. Byte 6 of the old table
+    /// (the old-format edge, 127) is left alone; format 3.1 keeps the edge in the extra table.
     public mutating func setStick(_ c: StickConfig, left: Bool) {
         let base = Self.stickBase(left), extra = Self.stickExtra(left)
         // Space Station keeps the curve type in both places.
         bytes[base] = c.curve.rawValue
         bytes[extra] = c.curve.rawValue
-        bytes[base + 1] = UInt8(clamping: max(0, min(127, c.deadZone)))
-        bytes[base + 6] = UInt8(clamping: max(0, min(127, c.edge)))
+        bytes[base + 1] = Self.byte(c.deadZone)
+        bytes[base + 2] = UInt8(clamping: c.point1.x)
+        bytes[base + 3] = UInt8(clamping: c.point1.y)
+        bytes[base + 4] = UInt8(clamping: c.point2.x)
+        bytes[base + 5] = UInt8(clamping: c.point2.y)
+        for (i, y) in c.samples.enumerated() { bytes[extra + 1 + i] = UInt8(y + 50) }
         bytes[extra + 10] = c.circular ? 1 : 0
+        bytes[extra + 11] = Self.byte(c.edge)
     }
 
     // Triggers: 7 bytes each at 123 (kind 0 normal / 1 ForceAdapt / 2 vibration, start, curve

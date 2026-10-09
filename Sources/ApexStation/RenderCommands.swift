@@ -18,6 +18,15 @@ enum RenderCommands {
             if let image = renderer.cgImage { write(image, to: args[i + 1]) }
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-curve"), args.count > i + 1 {
+            let config = StickConfig(curve: .custom, deadZone: 12, edge: 15, point1: .init(x: 40, y: 20), point2: .init(x: 90, y: 100))
+            let view = CurveEditor(config: config, position: StickPosition(x: 18000, y: 9000), live: true) { _ in }
+                .frame(width: 300, height: 260).padding(20).background(Theme.sheet).foregroundStyle(.white)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            if let image = renderer.cgImage { write(image, to: args[i + 1]) }
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--render-preview"), args.count > i + 1 {
             let scale = args.count > i + 2 ? Double(args[i + 2]) ?? 2 : 2
             renderPreview(to: args[i + 1], scale: scale)

@@ -203,20 +203,47 @@ private func bytes(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { U
 
     @Test func realProfileHasDefaultSticks() throws {
         let p = try #require(Profile(slot: 0, bytes: record))
-        // User's profile: curve type 0, dead zone 0, edge 127, rectangle (bytes 109-122, 790-813).
+        // User's profile: default curve, bends (63, 63) and (127, 127), no dead zone or edge, rectangle.
         for left in [true, false] {
-            #expect(p.stick(left: left) == StickConfig(curve: .standard, deadZone: 0, edge: 127, circular: false))
+            #expect(p.stick(left: left) == StickConfig(curve: .standard, deadZone: 0, edge: 0,
+                                                       point1: .init(x: 63, y: 63), point2: .init(x: 127, y: 127), circular: false))
         }
+    }
+
+    @Test func defaultCurveMatchesWhatSpaceStationWrote() {
+        // Profile 2's left stick after Space Station saved the default curve: bytes 791-799.
+        #expect(StickConfig(curve: .standard).samples.map { $0 + 50 } == [50, 63, 75, 88, 100, 113, 125, 138, 150])
+    }
+
+    @Test func deadZoneStartsTheCurveLater() {
+        // Line (20, 0) → (60, 50) → (100, 100): below 0 inside the dead zone, as Space Station stores it.
+        #expect(StickConfig(curve: .standard, deadZone: 20).samples == [-25, -9, 6, 22, 38, 53, 69, 84, 100])
+    }
+
+    @Test func edgeReachesFullOutputEarly() {
+        // Line (0, 0) → (40, 50) → (80, 100), then flat.
+        #expect(StickConfig(curve: .standard, edge: 20).samples == [0, 16, 31, 47, 63, 78, 94, 100, 100])
     }
 
     @Test func stickEditsTouchOnlyTheirBytes() throws {
         let old = try #require(Profile(slot: 0, bytes: record))
         var p = old
-        p.setStick(StickConfig(curve: .quick, deadZone: 20, edge: 110, circular: true), left: false)
-        #expect(p.stick(left: false) == StickConfig(curve: .quick, deadZone: 20, edge: 110, circular: true))
+        let new = StickConfig(curve: .quick, deadZone: 20, edge: 10, circular: true)
+        p.setStick(new, left: false)
+        #expect(p.stick(left: false) == new)
+        #expect(p.stick(left: false).point1 == .init(x: 64, y: 96))
         #expect(p.stick(left: true) == old.stick(left: true))
-        let changed = (0..<Profile.size).filter { p.bytes[$0] != old.bytes[$0] }
-        #expect(changed == [116, 117, 122, 802, 812]) // type, dead zone, edge, extra type, circularity
+        let changed = Set((0..<Profile.size).filter { p.bytes[$0] != old.bytes[$0] })
+        #expect(changed.isSubset(of: Set(116...121).union(802...813)))
+        #expect(changed.isSuperset(of: [116, 117, 802, 803, 812, 813])) // type, dead zone, extra type, first sample, shape, edge
+    }
+
+    @Test func antiDeadZoneIsStoredAsSpaceStationWritesIt() throws {
+        var p = try #require(Profile(slot: 0, bytes: record))
+        p.setStick(StickConfig(curve: .custom, deadZone: -10, edge: -5), left: true)
+        #expect(p.bytes[110] == 246 && p.bytes[801] == 251)
+        #expect(p.stick(left: true).deadZone == -10 && p.stick(left: true).edge == -5)
+        #expect(p.stick(left: true).samples.first == 10)
     }
 
     @Test func realProfileHasNormalTriggers() throws {

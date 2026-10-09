@@ -179,10 +179,11 @@ private struct StickPanel: View {
 
     var body: some View {
         let config = service.editingProfile?.stick(left: left)
-        StickPlot(position: left ? service.state.leftStick : service.state.rightStick, live: service.live,
-                  deadZone: CGFloat(config?.deadZone ?? 0) / 127, edge: CGFloat(config?.edge ?? 127) / 127)
+        let position = left ? service.state.leftStick : service.state.rightStick
+        StickPlot(position: position, live: service.live,
+                  deadZone: CGFloat(max(config?.deadZone ?? 0, 0)) / 100, edge: CGFloat(100 - max(config?.edge ?? 0, 0)) / 100)
             .frame(height: 200)
-        if let config { StickShape(config: config, left: left) }
+        if let config { StickShape(config: config, left: left, position: position, live: service.live) }
         if let profile = service.editingProfile {
             let key: FlydigiKey = left ? .l3 : .r3
             VStack(alignment: .leading, spacing: 10) {
@@ -227,65 +228,191 @@ private struct StickPanel: View {
     }
 }
 
-/// Dead zone, range, curve and shape for one stick, stored in the active profile.
+/// Response curve and shape for one stick, stored in the active profile.
 private struct StickShape: View {
     @Environment(ControllerService.self) private var service
     let config: StickConfig
     let left: Bool
-    @ViewState private var deadZone: Double = 0
-    @ViewState private var edge: Double = 100
+    let position: StickPosition
+    let live: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Caption("Dead zone")
-            slider(value: $deadZone, range: 0...40, unit: "%") { save { $0.deadZone = percentToRaw(deadZone) } }
-            Caption("Full output at")
-            slider(value: $edge, range: 70...100, unit: "%") { save { $0.edge = percentToRaw(edge) } }
+            Caption("Response")
+            ChipPicker(options: StickConfig.Curve.allCases, selection: config.curve, label: curveLabel) { c in
+                // Like Space Station, a preset starts clean: no dead zone or edge.
+                guard c != .custom else { return }
+                save(StickConfig(curve: c, circular: config.circular))
+            }
+            CurveEditor(config: config, position: position, live: live) { save($0) }
+                .frame(height: 230)
         }
         VStack(alignment: .leading, spacing: 10) {
-            Caption("Response curve")
-            ChipPicker(options: [StickConfig.Curve.standard, .quick, .slow], selection: config.curve, label: curveLabel) { c in
-                save { $0.curve = c }
-            }
             Caption("Shape")
             ChipPicker(options: [false, true], selection: config.circular, label: { $0 ? "Circle" : "Square" }) { c in
-                save { $0.circular = c }
+                var new = config
+                new.circular = c
+                save(new)
             }
         }
-        .onAppear(perform: load)
-        .onChange(of: config) { _, _ in load() }
     }
 
-    private func load() {
-        deadZone = (Double(config.deadZone) * 100 / 127).rounded()
-        edge = (Double(config.edge) * 100 / 127).rounded()
-    }
-
-    private func percentToRaw(_ percent: Double) -> Int { Int((percent * 127 / 100).rounded()) }
-
-    private func save(_ change: (inout StickConfig) -> Void) {
-        var c = config
-        change(&c)
-        Task { await service.setStick(c, left: left) }
-    }
-
-    private func slider(value: Binding<Double>, range: ClosedRange<Double>, unit: String, commit: @escaping () -> Void) -> some View {
-        HStack {
-            // No step: macOS would draw a tick per step. Values are rounded instead.
-            Slider(value: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = $0.rounded() }), in: range) { editing in
-                if !editing { commit() }
-            }
-            Text("\(Int(value.wrappedValue))\(unit)").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 40)
-        }
+    private func save(_ new: StickConfig) {
+        Task { await service.setStick(new, left: left) }
     }
 
     private func curveLabel(_ c: StickConfig.Curve) -> String {
         switch c {
         case .standard: "Default"
-        case .quick: "Quick"
-        case .slow: "Slow"
+        case .quick: "Instant"
+        case .slow: "Delay"
         case .custom: "Custom"
         }
+    }
+}
+
+/// The stick's response curve: travel across, output up. Drag the first point right for a dead
+/// zone or up for an anti-dead zone, the last point left to reach full output early or down to
+/// cap it, and the two middle points to bend the curve. The filled line is what the controller
+/// actually follows (its nine stored samples); the dot is the stick right now.
+struct CurveEditor: View {
+    let config: StickConfig
+    let position: StickPosition
+    let live: Bool
+    let commit: (StickConfig) -> Void
+
+    private enum Handle { case start, bend1, bend2, end }
+    @ViewState private var draft: StickConfig?
+    @ViewState private var dragging: Handle?
+
+    private var shown: StickConfig { draft ?? config }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                let box = CGRect(origin: .zero, size: geo.size).insetBy(dx: 10, dy: 10)
+                Canvas { ctx, _ in draw(&ctx, in: box) }
+                    .contentShape(.rect)
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged { drag(to: $0.location, from: $0.startLocation, in: box) }
+                        .onEnded { _ in
+                            if let draft, draft != config { commit(draft) }
+                            dragging = nil
+                        })
+            }
+            .background(Color.black.opacity(0.25), in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.stroke))
+            Text(readout).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+        }
+        .onChange(of: config) { _, _ in if dragging == nil { draft = nil } }
+    }
+
+    private var readout: String {
+        let c = shown
+        let dead = c.deadZone > 0 ? "Dead zone \(c.deadZone)%" : c.deadZone < 0 ? "Anti-dead zone \(-c.deadZone)%" : "No dead zone"
+        let edge = c.edge > 0 ? "full output at \(100 - c.edge)%" : c.edge < 0 ? "output capped at \(100 + c.edge)%" : "full output at the rim"
+        return "\(dead) · \(edge). Drag the points to change it."
+    }
+
+    // MARK: Drawing
+
+    private func at(_ x: Double, _ y: Double, _ box: CGRect) -> CGPoint {
+        CGPoint(x: box.minX + box.width * x / 100, y: box.maxY - box.height * y / 100)
+    }
+
+    private func draw(_ ctx: inout GraphicsContext, in box: CGRect) {
+        var grid = Path()
+        for f in [25.0, 50, 75] {
+            grid.move(to: at(f, 0, box)); grid.addLine(to: at(f, 100, box))
+            grid.move(to: at(0, f, box)); grid.addLine(to: at(100, f, box))
+        }
+        ctx.stroke(grid, with: .color(Theme.stroke), lineWidth: 0.5)
+        var diagonal = Path()
+        diagonal.move(to: at(0, 0, box)); diagonal.addLine(to: at(100, 100, box))
+        ctx.stroke(diagonal, with: .color(.white.opacity(0.08)), style: .init(lineWidth: 1, dash: [3, 4]))
+
+        // What the controller follows: its nine samples, no output below zero.
+        let samples = shown.samples
+        var curve = Path()
+        for (i, y) in samples.enumerated() {
+            let p = at(100 * Double(i) / 8, Double(max(0, y)), box)
+            i == 0 ? curve.move(to: p) : curve.addLine(to: p)
+        }
+        var fill = curve
+        fill.addLine(to: at(100, 0, box)); fill.addLine(to: at(0, 0, box)); fill.closeSubpath()
+        ctx.fill(fill, with: .linearGradient(Gradient(colors: [Theme.accent.opacity(0.35), Theme.accent.opacity(0.02)]),
+                                             startPoint: CGPoint(x: box.midX, y: box.minY), endPoint: CGPoint(x: box.midX, y: box.maxY)))
+        ctx.stroke(curve, with: .color(Theme.glow), style: .init(lineWidth: 2, lineCap: .round, lineJoin: .round))
+
+        // The line the points define, and the points themselves.
+        let line = shown.polyline
+        var guide = Path()
+        guide.addLines(line.map { at($0.x, $0.y, box) })
+        ctx.stroke(guide, with: .color(.white.opacity(0.25)), style: .init(lineWidth: 1, dash: [2, 3]))
+        for (handle, p) in zip([Handle.start, .bend1, .bend2, .end], line) {
+            let q = at(p.x, p.y, box), r: CGFloat = dragging == handle ? 7 : 5.5
+            ctx.fill(Path(ellipseIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)), with: .color(Theme.accent))
+            ctx.stroke(Path(ellipseIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)), with: .color(.white.opacity(0.9)), lineWidth: 1.5)
+        }
+
+        // The stick now: how far it's pushed, and what that outputs.
+        if live {
+            let travel = min(100, hypot(Double(position.x), Double(position.y)) / 32767 * 100)
+            let i = min(7, Int(travel / 12.5)), t = (travel - Double(i) * 12.5) / 12.5
+            let out = max(0, Double(samples[i]) + (Double(samples[i + 1]) - Double(samples[i])) * t)
+            let q = at(travel, out, box)
+            var g = ctx
+            g.addFilter(.blur(radius: 5))
+            g.fill(Path(ellipseIn: CGRect(x: q.x - 8, y: q.y - 8, width: 16, height: 16)), with: .color(Theme.glow.opacity(0.8)))
+            ctx.fill(Path(ellipseIn: CGRect(x: q.x - 4, y: q.y - 4, width: 8, height: 8)), with: .color(.white))
+        }
+    }
+
+    // MARK: Dragging
+
+    private func drag(to location: CGPoint, from start: CGPoint, in box: CGRect) {
+        let x = min(100, max(0, (location.x - box.minX) / box.width * 100))
+        let y = min(100, max(0, (box.maxY - location.y) / box.height * 100))
+        if dragging == nil {
+            // Grab the point nearest to where the drag began.
+            let line = shown.polyline
+            let handles: [Handle] = [.start, .bend1, .bend2, .end]
+            let nearest = zip(handles, line).min { a, b in
+                hypot(at(a.1.x, a.1.y, box).x - start.x, at(a.1.x, a.1.y, box).y - start.y) <
+                    hypot(at(b.1.x, b.1.y, box).x - start.x, at(b.1.x, b.1.y, box).y - start.y)
+            }
+            guard let nearest, hypot(at(nearest.1.x, nearest.1.y, box).x - start.x, at(nearest.1.x, nearest.1.y, box).y - start.y) < 22 else { return }
+            dragging = nearest.0
+            draft = config
+        }
+        guard var c = draft, let handle = dragging else { return }
+        c.curve = .custom
+        switch handle {
+        case .start:
+            // Along the bottom is a dead zone, up the left side an anti-dead zone.
+            c.deadZone = x >= y ? Int(x.rounded()) : -Int(y.rounded())
+            c.deadZone = min(max(c.deadZone, -60), 60)
+            if c.deadZone > 0, c.edge > 0 { c.deadZone = min(c.deadZone, 95 - c.edge) }
+        case .end:
+            // Along the top reaches full output early, down the right side caps it.
+            let dx = 100 - x, dy = 100 - y
+            c.edge = dx >= dy ? Int(dx.rounded()) : -Int(dy.rounded())
+            c.edge = min(max(c.edge, -60), 60)
+            if c.edge > 0, c.deadZone > 0 { c.edge = min(c.edge, 95 - c.deadZone) }
+        case .bend1, .bend2:
+            let line = c.polyline, s = line[0], e = line[3]
+            let px = e.x > s.x ? Int(((x - s.x) / (e.x - s.x) * 127).rounded()) : 0
+            let py = e.y > s.y ? Int(((y - s.y) / (e.y - s.y) * 127).rounded()) : 0
+            var p = StickConfig.Point(x: min(127, max(0, px)), y: min(127, max(0, py)))
+            if handle == .bend1 {
+                p.x = min(p.x, c.point2.x)
+                c.point1 = p
+            } else {
+                p.x = max(p.x, c.point1.x)
+                c.point2 = p
+            }
+        }
+        draft = c
     }
 }
 
