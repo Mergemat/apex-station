@@ -111,9 +111,22 @@ final class ControllerService {
         await reloadLighting(slot)
     }
 
-    /// Applies `change` to the active profile's lighting and writes only what changed.
-    func editLighting(_ change: (inout Lighting) -> Void) async {
-        guard let old = editingLighting, !saving else { return }
+    /// Profile `slot` as a file to share or keep.
+    func exportProfile(_ slot: Int) -> ProfileFile? {
+        guard let p = profiles.first(where: { $0.slot == slot }) else { return nil }
+        return ProfileFile(profile: p, lighting: lighting[slot], name: displayName(p))
+    }
+
+    /// Writes a profile file into `slot` (only the bytes that differ, backed up first like any change).
+    func importProfile(_ file: ProfileFile, into slot: Int) async {
+        guard let new = file.profile(for: slot) else { return }
+        await edit(slot: slot) { $0 = new }
+        if let light = file.lighting(for: slot) { await editLighting(slot: slot) { $0 = light } }
+    }
+
+    /// Applies `change` to a profile's lighting (the active one by default) and writes only what changed.
+    func editLighting(slot: Int? = nil, _ change: (inout Lighting) -> Void) async {
+        guard let old = slot.map({ lighting[$0] }) ?? editingLighting, !saving else { return }
         var new = old
         change(&new)
         let frames = Flydigi.writeLighting(from: old, to: new)

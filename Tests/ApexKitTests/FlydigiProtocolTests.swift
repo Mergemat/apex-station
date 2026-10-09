@@ -439,3 +439,24 @@ struct MacroRecorderTests {
         #expect(Screen.acknowledges([0x5A, 0xA5, 0x00, 0x00, 0xD0, 0x00, 0x05, 0x00, 0x00], packets[0]))
     }
 }
+
+@Suite struct ProfileFileTests {
+    let record = try! [UInt8](Data(contentsOf: Bundle.module.url(forResource: "Fixtures/apex5-profile0", withExtension: "bin")!))
+
+    @Test func readsAFileWrittenByHand() throws {
+        let json = #"{"format":"apex-station-profile","version":1,"name":"Shooter","profile":"\#(Data(record).base64EncodedString())"}"#
+        let file = try #require(ProfileFile.decode(Data(json.utf8)))
+        #expect(file.name == "Shooter")
+        #expect(file.profile(for: 2)?.bytes == record)
+        #expect(file.profile(for: 2)?.slot == 2)
+        #expect(file.lighting(for: 2) == nil)
+    }
+
+    @Test func rejectsOtherFiles() {
+        let short = #"{"format":"apex-station-profile","version":1,"name":"x","profile":"AAEC"}"#
+        let other = #"{"format":"something-else","version":1,"name":"x","profile":"\#(Data(record).base64EncodedString())"}"#
+        #expect(ProfileFile.decode(Data(short.utf8)) == nil)
+        #expect(ProfileFile.decode(Data(other.utf8)) == nil)
+        #expect(ProfileFile.decode(Data("not json".utf8)) == nil)
+    }
+}

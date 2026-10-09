@@ -1,5 +1,6 @@
 import ApexKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The whole app on one screen: the controller in the middle, click any part of it to configure
 /// that part in the panel that slides in. Profiles and device settings live in the header.
@@ -173,6 +174,8 @@ private struct ProfileSwitcher: View {
                 .disabled(!service.connected)
                 .contextMenu {
                     Button("Rename…") { renaming = slot; newName = profile.map(displayName) ?? "" }
+                    Button("Export…") { export(slot) }
+                    Button("Import…") { importFile(into: slot) }
                     Button("Reset to factory settings…", role: .destructive) { resetting = slot }
                 }
                 .help(profile.map { "Profile \(slot + 1): \(displayName($0))" + ($0.remapped.isEmpty ? "" : " · \($0.remapped.count) remapped") } ?? "Profile \(slot + 1)")
@@ -229,6 +232,32 @@ private struct StatusBadge: View {
         if !service.connected && service.bluetooth { return service.live ? "Bluetooth · \(service.reportRate) Hz" : "Bluetooth" }
         if !service.connected { return "No controller" }
         return service.live ? "\(service.reportRate) Hz" : "Connected"
+    }
+}
+
+extension ProfileSwitcher {
+    private var fileType: UTType { UTType(filenameExtension: ProfileFile.fileExtension) ?? .json }
+
+    func export(_ slot: Int) {
+        guard let file = service.exportProfile(slot), let data = try? file.encoded() else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [fileType]
+        panel.nameFieldStringValue = "\(file.name).\(ProfileFile.fileExtension)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? data.write(to: url)
+    }
+
+    func importFile(into slot: Int) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [fileType, .json]
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        guard let file = ProfileFile.decode(data) else {
+            let alert = NSAlert()
+            alert.messageText = "That isn't an Apex Station profile."
+            alert.runModal()
+            return
+        }
+        Task { await service.importProfile(file, into: slot) }
     }
 }
 
