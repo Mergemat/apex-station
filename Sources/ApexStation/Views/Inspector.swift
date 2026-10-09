@@ -115,11 +115,7 @@ private struct ButtonPanel: View {
                     }
                 }
                 if !showsMacro {
-                    TargetGrid(key: key, current: mapping) { target in
-                        Task { await service.remap(key, to: target == key ? .standard : .button(target)) }
-                    }
-                    if case .macro = mapping { Note("Runs a macro, but the macro is missing. Pick a button or record a new macro.") }
-                    if case .keyboardOrMouse = mapping { Note("Sends a keyboard or mouse input set up in Space Station.") }
+                    PressToAssign(key: key, current: mapping)
                 }
             }
             if showsMacro {
@@ -134,39 +130,6 @@ private struct ButtonPanel: View {
         } else {
             Note(service.connected ? "Reading the controller's profiles…" : "Connect your Apex 5 to change its buttons.")
         }
-    }
-}
-
-/// Every Apex 5 button as a target; the button's own entry means "default".
-struct TargetGrid: View {
-    let key: FlydigiKey
-    let current: KeyMapping
-    let pick: (FlydigiKey) -> Void
-
-    private let targets: [FlydigiKey] = [
-        .a, .b, .x, .y, .lb, .rb, .lt, .rt, .up, .down, .left, .right, .l3, .r3, .view, .menu, .home,
-    ]
-
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-            ForEach([key] + targets.filter { $0 != key }, id: \.self) { target in
-                let isOwn = target == key
-                let selected = isOwn ? current == .standard : current == .button(target)
-                Button { pick(target) } label: {
-                    VStack(spacing: 2) {
-                        Text(target.shortName).font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                        if isOwn { Text("DEFAULT").font(.system(size: 7, weight: .bold)).tracking(0.8).opacity(0.7) }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 38)
-                    .foregroundStyle(selected ? .white : Theme.secondary)
-                    .background(selected ? Theme.accent : Color.white.opacity(0.06), in: .rect(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? Theme.glow.opacity(0.6) : Theme.stroke))
-                    .bloom(selected, radius: 8)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: current)
     }
 }
 
@@ -221,9 +184,7 @@ private struct StickPanel: View {
             let key: FlydigiKey = left ? .l3 : .r3
             VStack(alignment: .leading, spacing: 10) {
                 Caption("Click (\(key.name)) acts as")
-                TargetGrid(key: key, current: profile.mapping(for: key)) { target in
-                    Task { await service.remap(key, to: target == key ? .standard : .button(target)) }
-                }
+                PressToAssign(key: key, current: profile.mapping(for: key))
             }
         }
         if let s = service.settings {

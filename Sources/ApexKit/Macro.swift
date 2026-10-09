@@ -95,6 +95,20 @@ extension FlydigiKey {
         .a, .b, .x, .y, .lb, .rb, .lt, .rt, .up, .down, .left, .right, .l3, .r3, .view, .menu,
     ]
 
+    /// Buttons another button can be made to act as.
+    public static let remapTargets: [FlydigiKey] = macroTargets + [.home]
+
+    /// Which of `keys` are down in a live input sample (triggers count past half travel).
+    public static func pressed(in state: GamepadState, among keys: [FlydigiKey]) -> Set<FlydigiKey> {
+        Set(keys.filter { key in
+            switch key {
+            case .lt: state.leftTrigger >= 128
+            case .rt: state.rightTrigger >= 128
+            default: key.liveButton.map { state.buttons.contains($0) } ?? false
+            }
+        })
+    }
+
     /// The live-input bit for this key; triggers are read from their analog value instead.
     var liveButton: GamepadButtons? {
         switch self {
@@ -112,6 +126,7 @@ extension FlydigiKey {
         case .r3: .rightStick
         case .view: .back
         case .menu: .start
+        case .home: .guide
         default: nil
         }
     }
@@ -130,15 +145,7 @@ public struct MacroRecorder: Sendable {
 
     /// Feeds one input sample taken `ms` milliseconds into the recording.
     public mutating func add(_ state: GamepadState, at ms: Int) {
-        var down: Set<FlydigiKey> = []
-        for key in FlydigiKey.macroTargets {
-            let pressed = switch key {
-            case .lt: state.leftTrigger >= 128
-            case .rt: state.rightTrigger >= 128
-            default: key.liveButton.map { state.buttons.contains($0) } ?? false
-            }
-            if pressed { down.insert(key) }
-        }
+        let down = FlydigiKey.pressed(in: state, among: FlydigiKey.macroTargets)
         for key in FlydigiKey.macroTargets where down.contains(key) != held.contains(key) {
             guard !isFull else { return }
             let start = startedAt ?? ms

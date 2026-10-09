@@ -15,7 +15,7 @@ and your setup follows the controller to any computer.
 
 Click any part of the controller to change it.
 
-- **Buttons and paddles:** make any button act as another one, including M1–M4, LM and RM. Turbo
+- **Buttons and paddles:** click Assign and press the button it should act as. Works for every button, including M1–M4, LM and RM. Turbo
   that fires while held or toggles on and off, at 1–30 presses a second.
 - **Macros:** record a sequence by pressing buttons on the controller, or build it tap by tap.
   Choose whether it plays once, repeats while held, or toggles. Up to 5 per profile.

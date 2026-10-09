@@ -158,6 +158,36 @@ final class ControllerService {
         return recordedSteps ?? []
     }
 
+    /// True while waiting for the user to press a button on the controller.
+    private(set) var listening = false
+    private var listenTask: Task<FlydigiKey?, Never>?
+
+    /// Waits for the next button press on the controller (up to 15 s) and returns it, or nil if
+    /// cancelled or nothing was pressed. Buttons already held when it starts don't count.
+    func nextPress() async -> FlydigiKey? {
+        guard live else { return nil }
+        listenTask?.cancel()
+        let task = Task { [channel] () -> FlydigiKey? in
+            let targets = FlydigiKey.remapTargets
+            var held = FlydigiKey.pressed(in: channel.live.snapshot().state, among: targets)
+            let deadline = ContinuousClock.now + .seconds(15)
+            while !Task.isCancelled, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(4))
+                let down = FlydigiKey.pressed(in: channel.live.snapshot().state, among: targets)
+                if let key = targets.first(where: { down.contains($0) && !held.contains($0) }) { return key }
+                held = down
+            }
+            return nil
+        }
+        listenTask = task
+        listening = true
+        let key = await task.value
+        if listenTask == task { listening = false; listenTask = nil }
+        return key
+    }
+
+    func cancelListening() { listenTask?.cancel() }
+
     func setTurbo(_ key: FlydigiKey, _ turbo: (mode: TurboMode, speed: UInt8)?) async {
         await edit { $0.setTurbo(turbo, for: key) }
     }
