@@ -28,7 +28,7 @@ final class ControllerService {
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
 
     func start() {
-        Task { await channel.start() }
+        channel.start()
         Task { await watchChannel() }
         Task { await refreshUI() }
     }
