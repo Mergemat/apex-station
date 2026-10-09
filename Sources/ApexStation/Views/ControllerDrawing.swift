@@ -39,8 +39,8 @@ struct ControllerDrawing: View {
         // Shoulder row above the body: triggers fill with how far they're pulled.
         trigger(&ctx, L.lt, "LT", live ? state.leftTrigger : 0)
         trigger(&ctx, L.rt, "RT", live ? state.rightTrigger : 0)
-        key(&ctx, Path(roundedRect: L.lm, cornerRadius: L.lm.height / 2), "LM", b.contains(.leftMacro))
-        key(&ctx, Path(roundedRect: L.rm, cornerRadius: L.rm.height / 2), "RM", b.contains(.rightMacro))
+        key(&ctx, L.lm, "LM", b.contains(.leftMacro))
+        key(&ctx, L.rm, "RM", b.contains(.rightMacro))
 
         // The bumpers sit behind the body; only their tops show.
         bumper(&ctx, L.bumperLeft, on: b.contains(.leftBumper))
@@ -80,9 +80,9 @@ struct ControllerDrawing: View {
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
         caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
-        for (r, name, on) in [(L.m2, "M2", b.contains(.m2)), (L.m4, "M4", b.contains(.m4)),
-                              (L.m1, "M1", b.contains(.m1)), (L.m3, "M3", b.contains(.m3))] {
-            key(&ctx, Path(roundedRect: r, cornerRadius: r.height / 2), name, on)
+        for (shape, name, on) in [(L.m2, "M2", b.contains(.m2)), (L.m4, "M4", b.contains(.m4)),
+                                  (L.m1, "M1", b.contains(.m1)), (L.m3, "M3", b.contains(.m3))] {
+            key(&ctx, shape, name, on)
         }
         key(&ctx, Path(roundedRect: L.turbo, cornerRadius: L.turbo.height / 2), "TURBO", b.contains(.turbo), small: true)
         key(&ctx, Path(roundedRect: L.fn, cornerRadius: L.fn.height / 2), "FN", b.contains(.fn), small: true)
@@ -184,28 +184,29 @@ struct ControllerDrawing: View {
     }
 
     private func key(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ on: Bool, small: Bool = false) {
-        if on { glow(&ctx, p) } else { ctx.fill(p, with: .color(.white.opacity(0.10))) }
-        ctx.stroke(p, with: .color(.white.opacity(on ? 0.55 : 0.18)), lineWidth: 0.8)
+        if on { glow(&ctx, p) } else { ctx.fill(p, with: .color(.white.opacity(0.08))) }
+        ctx.stroke(p, with: .color(.white.opacity(on ? 0.55 : 0.22)), lineWidth: 0.9)
         label(&ctx, text, at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY), size: small ? 7.5 : 11,
               color: on ? .white : .white.opacity(0.6))
     }
 
-    private func trigger(_ ctx: inout GraphicsContext, _ r: CGRect, _ text: String, _ value: UInt8) {
-        let p = Path(roundedRect: r, cornerRadius: r.height / 2)
-        ctx.fill(p, with: .color(.white.opacity(0.07)))
+    /// A trigger fills from the bottom up as it's pulled.
+    private func trigger(_ ctx: inout GraphicsContext, _ p: Path, _ text: String, _ value: UInt8) {
+        let r = p.boundingRect
+        ctx.fill(p, with: .color(.white.opacity(0.08)))
         let f = CGFloat(value) / 255
         if f > 0 {
             var inner = ctx
             inner.clip(to: p)
-            let level = Path(CGRect(x: r.minX, y: r.minY, width: r.width * f, height: r.height))
+            let level = Path(CGRect(x: r.minX, y: r.maxY - r.height * f, width: r.width, height: r.height * f))
             var g = inner
             g.addFilter(.blur(radius: 6))
             g.fill(level, with: .color(Theme.accent))
             inner.fill(level, with: .linearGradient(Gradient(colors: [Theme.accent, Theme.glow]),
-                                                    startPoint: CGPoint(x: r.minX, y: r.midY), endPoint: CGPoint(x: r.maxX, y: r.midY)))
+                                                    startPoint: CGPoint(x: r.midX, y: r.maxY), endPoint: CGPoint(x: r.midX, y: r.minY)))
         }
-        ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.18)), lineWidth: 0.8)
-        label(&ctx, text, at: CGPoint(x: r.midX, y: r.midY), size: 11, color: f > 0.4 ? .white : .white.opacity(0.6))
+        ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.22)), lineWidth: 0.9)
+        label(&ctx, text, at: CGPoint(x: r.midX, y: r.midY + 3), size: 11, color: f > 0.4 ? .white : .white.opacity(0.65))
     }
 
     /// A stick: its well, and the cap (with the drawing's ribs) moved where the stick is pushed.
@@ -307,14 +308,24 @@ enum ControllerControl: Hashable {
 enum ControllerLayout {
     static let bodyTop: CGFloat = 74
 
-    static let lt = CGRect(x: 58, y: 18, width: 104, height: 26)
-    static let rt = CGRect(x: 338, y: 18, width: 104, height: 26)
-    static let lm = CGRect(x: 172, y: 18, width: 46, height: 26)
-    static let rm = CGRect(x: 282, y: 18, width: 46, height: 26)
-    static let m2 = CGRect(x: 40, y: 446, width: 100, height: 26)
-    static let m4 = CGRect(x: 40, y: 480, width: 100, height: 26)
-    static let m1 = CGRect(x: 360, y: 446, width: 100, height: 26)
-    static let m3 = CGRect(x: 360, y: 480, width: 100, height: 26)
+    // The parts above and below the body, shaped like the parts themselves (right side; the
+    // left mirrors it): a trigger tab with a rounded top, a slanted LM/RM key, angular paddles.
+    static let rt: Path = {
+        var p = Path()
+        p.move(to: CGPoint(x: 352, y: 56))
+        p.addLine(to: CGPoint(x: 353, y: 26))
+        p.addQuadCurve(to: CGPoint(x: 380, y: 6), control: CGPoint(x: 354, y: 6))
+        p.addQuadCurve(to: CGPoint(x: 410, y: 52), control: CGPoint(x: 408, y: 8))
+        p.addQuadCurve(to: CGPoint(x: 404, y: 56), control: CGPoint(x: 411, y: 56))
+        p.closeSubpath()
+        return p
+    }()
+    static let rm = rounded([CGPoint(x: 302, y: 20), CGPoint(x: 342, y: 20), CGPoint(x: 334, y: 50), CGPoint(x: 294, y: 50)], 5)
+    static let m1 = rounded([CGPoint(x: 370, y: 446), CGPoint(x: 424, y: 444), CGPoint(x: 460, y: 460),
+                             CGPoint(x: 446, y: 474), CGPoint(x: 360, y: 472)], 6)
+    static let m3 = rounded([CGPoint(x: 362, y: 480), CGPoint(x: 430, y: 482), CGPoint(x: 444, y: 488),
+                             CGPoint(x: 460, y: 498), CGPoint(x: 450, y: 512), CGPoint(x: 364, y: 512)], 6)
+    static let lt = mirrored(rt), lm = mirrored(rm), m2 = mirrored(m1), m4 = mirrored(m3)
     static let turbo = CGRect(x: 196, y: 476, width: 50, height: 22)
     static let fn = CGRect(x: 254, y: 476, width: 50, height: 22)
 
@@ -355,21 +366,37 @@ enum ControllerLayout {
         return Path(cross)
     }()
 
+    /// A polygon with its corners rounded by `radius`.
+    static func rounded(_ pts: [CGPoint], _ radius: CGFloat) -> Path {
+        var p = Path()
+        let n = pts.count
+        let start = CGPoint(x: (pts[n - 1].x + pts[0].x) / 2, y: (pts[n - 1].y + pts[0].y) / 2)
+        p.move(to: start)
+        for i in 0..<n {
+            p.addArc(tangent1End: pts[i], tangent2End: pts[(i + 1) % n], radius: radius)
+        }
+        p.closeSubpath()
+        return p
+    }
+
+    /// The same shape on the other side of the drawing.
+    static func mirrored(_ p: Path) -> Path {
+        p.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 500, ty: 0))
+    }
+
     private static func circle(_ c: CGPoint, _ r: CGFloat) -> Path {
         Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
     }
 
     static let regions: [ControllerControl: Path] = {
         var r: [ControllerControl: Path] = [
-            .key(.lt): Path(roundedRect: lt, cornerRadius: 13), .key(.rt): Path(roundedRect: rt, cornerRadius: 13),
-            .key(.lm): Path(roundedRect: lm, cornerRadius: 13), .key(.rm): Path(roundedRect: rm, cornerRadius: 13),
+            .key(.lt): lt, .key(.rt): rt, .key(.lm): lm, .key(.rm): rm,
             .leftStick: circle(leftStick, stickRadius), .rightStick: circle(rightStick, stickRadius),
             .key(.a): circle(a, faceRadius), .key(.b): circle(b, faceRadius),
             .key(.x): circle(x, faceRadius), .key(.y): circle(y, faceRadius),
             .key(.view): Path(polygon: ControllerArt.view), .key(.menu): Path(polygon: ControllerArt.menu),
             .key(.home): Path(polygon: ControllerArt.home),
-            .key(.m1): Path(roundedRect: m1, cornerRadius: 13), .key(.m2): Path(roundedRect: m2, cornerRadius: 13),
-            .key(.m3): Path(roundedRect: m3, cornerRadius: 13), .key(.m4): Path(roundedRect: m4, cornerRadius: 13),
+            .key(.m1): m1, .key(.m2): m2, .key(.m3): m3, .key(.m4): m4,
             .key(.turbo): Path(roundedRect: turbo, cornerRadius: 11), .key(.fn): Path(roundedRect: fn, cornerRadius: 11),
             .key(.lb): bumperLeft, .key(.rb): bumperRight,
             .screen: Path(roundedRect: screen, cornerRadius: 3),
