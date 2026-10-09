@@ -17,11 +17,11 @@ struct LibrarySheet: View {
     @ViewState private var problem: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Saved profiles").font(.system(size: 20, weight: .semibold))
-                    Text("Load one into profile \(slot + 1) on the controller.").font(.system(size: 12)).foregroundStyle(Theme.label)
+                    Text("Saved profiles").font(Theme.titleFont)
+                    Text("Load one into profile \(slot + 1) on the controller.").font(Theme.detailFont).foregroundStyle(Theme.label)
                 }
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
@@ -33,7 +33,7 @@ struct LibrarySheet: View {
                 .disabled(service.exportProfile(slot) == nil)
                 action("Import file…", icon: "doc.badge.plus") { importFile() }
             }
-            if let problem { Text(problem).font(.system(size: 11.5)).foregroundStyle(.orange) }
+            if let problem { Text(problem).font(Theme.noteFont).foregroundStyle(Theme.warning) }
             ScrollView {
                 VStack(spacing: 8) {
                     if library.profiles.isEmpty {
@@ -61,8 +61,8 @@ struct LibrarySheet: View {
     private func row(_ p: Library.SavedProfile) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(p.file.name).font(.system(size: 14, weight: .semibold))
-                Text(summary(p)).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text(p.file.name).font(Theme.headingFont)
+                Text(summary(p)).font(Theme.noteFont).foregroundStyle(Theme.label)
             }
             Spacer()
             Button(loaded == p.url ? "Loaded" : "Load") {
@@ -71,8 +71,8 @@ struct LibrarySheet: View {
                     loaded = p.url
                 }
             }
-            .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
-            .padding(.horizontal, 14).padding(.vertical, 7)
+            .buttonStyle(.plain).font(Theme.buttonFont)
+            .padding(.horizontal, 14).padding(.vertical, 8)
             .glass(.capsule, tint: Theme.accent.opacity(0.35), interactive: true)
             .disabled(!service.connected || service.saving)
             Menu {
@@ -103,7 +103,7 @@ struct LibrarySheet: View {
 
     private func action(_ title: String, icon: String, run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Label(title, systemImage: icon).font(.system(size: 12.5, weight: .semibold))
+            Label(title, systemImage: icon).font(Theme.buttonFont)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .glass(.capsule, interactive: true)
         }

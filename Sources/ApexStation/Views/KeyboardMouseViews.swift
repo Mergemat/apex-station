@@ -28,7 +28,7 @@ struct KeyAssign: View {
                     Button("Scroll down") { set(.scroll(up: false)) }
                 } label: {
                     Label("Mouse", systemImage: "computermouse")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(Theme.buttonFont)
                         .frame(maxWidth: .infinity).padding(.vertical, 8)
                         .glass(.capsule, interactive: true)
                 }
@@ -105,27 +105,27 @@ struct KeyboardMouseStatus: View {
     var body: some View {
         if !service.keyboardMouseOn {
             HStack {
-                Text("Keyboard & mouse is off.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text("Keyboard & mouse is off.").font(Theme.noteFont).foregroundStyle(Theme.label)
                 Spacer()
                 Button("Turn on") { service.setKeyboardMouse(true) }
-                    .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.glow)
+                    .buttonStyle(.plain).font(Theme.linkFont).foregroundStyle(Theme.glow)
             }
         } else if !KeyboardMouseOutput.isTrusted {
             HStack(alignment: .top) {
                 Text("Allow Apex Station under Privacy & Security → Accessibility so it can type and move the pointer.")
-                    .font(.system(size: 11.5)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(Theme.noteFont).foregroundStyle(Theme.warning).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Open") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                 }
-                .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.glow)
+                .buttonStyle(.plain).font(Theme.linkFont).foregroundStyle(Theme.glow)
             }
         } else if !service.live {
             Text(service.connected ? "Needs Full controller, in settings." : "Connect the controller to use it.")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                .font(Theme.noteFont).foregroundStyle(Theme.label)
         } else {
             Text("Saved on this Mac for profile \((service.activeProfile ?? 0) + 1).")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                .font(Theme.noteFont).foregroundStyle(Theme.label)
         }
     }
 }

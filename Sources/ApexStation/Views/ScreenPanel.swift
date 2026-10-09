@@ -30,7 +30,7 @@ struct ScreenPanel: View {
                 placeholder
                 smallButton("Choose picture or GIF", icon: "photo") { choose() }
             }
-            if let problem { Text(problem).font(.system(size: 11.5)).foregroundStyle(.orange) }
+            if let problem { Text(problem).font(Theme.noteFont).foregroundStyle(Theme.warning) }
             if let source, let selection {
                 uploadButton(title: "Put it on the controller") {
                     let frames = (selection.first...selection.last).map { source.encoded(frame: $0, crop: selection.crop) }
@@ -72,7 +72,7 @@ struct ScreenPanel: View {
     private var placeholder: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10).fill(Color.black)
-            Text("160 × 80").font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(Theme.label)
+            Text("160 × 80").font(Theme.monoFont.weight(.medium)).foregroundStyle(Theme.label)
         }
         .aspectRatio(2, contentMode: .fit)
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
@@ -81,7 +81,7 @@ struct ScreenPanel: View {
     private func smallButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(Theme.buttonFont)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .glass(.capsule, interactive: true)
         }
@@ -93,12 +93,12 @@ struct ScreenPanel: View {
         case .sending(let p)?:
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: p).tint(Theme.accent)
-                Text("Sending… \(Int(p * 100))%. Keep the cable plugged in.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text("Sending… \(Int(p * 100))%. Keep the cable plugged in.").font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         case .done?:
             Note("Done. Press the power button on the back of the controller to restart it, and the new screen shows.")
         case .failed(let message)?:
-            Text(message).font(.system(size: 11.5)).foregroundStyle(.orange)
+            Text(message).font(Theme.noteFont).foregroundStyle(Theme.warning)
         case nil where service.connected && !viaReceiver:
             Note("Uploading goes through Flydigi's 2.4 GHz receiver, like on Windows: the cable can't carry it. Plug the receiver in and switch the controller to 2.4G mode.")
         case nil:
@@ -112,8 +112,8 @@ struct ScreenPanel: View {
         let enabled = service.connected && viaReceiver && !service.saving
         return Button { Task { await action() } } label: {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(maxWidth: .infinity).padding(.vertical, 9)
+                .font(Theme.buttonFont)
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .background(primary && enabled ? Theme.accent : Color.white.opacity(0.06), in: .capsule)
                 .foregroundStyle(enabled ? .white : Theme.label)
                 .bloom(primary && enabled, radius: 8)

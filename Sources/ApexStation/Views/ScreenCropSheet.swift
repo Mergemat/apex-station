@@ -17,9 +17,9 @@ struct ScreenCropSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Frame the picture").font(.system(size: 20, weight: .semibold))
+                    Text("Frame the picture").font(Theme.titleFont)
                     Text("\(source.name.count > 40 ? String(source.name.prefix(37)) + "…" : source.name) · \(Int(source.size.width))×\(Int(source.size.height))\(source.count > 1 ? " · \(source.count) frames" : "")")
-                        .font(.system(size: 12)).foregroundStyle(Theme.label)
+                        .font(Theme.detailFont).foregroundStyle(Theme.label)
                 }
                 Spacer()
             }
@@ -32,13 +32,13 @@ struct ScreenCropSheet: View {
             }
             HStack(spacing: 10) {
                 Button("Fill") { selection.crop = ScreenSelection.filling(source.size) }
-                    .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 7).glass(.capsule, interactive: true)
+                    .buttonStyle(.plain).font(Theme.buttonFont)
+                    .padding(.horizontal, 14).padding(.vertical, 8).glass(.capsule, interactive: true)
                 Button("Whole image") { selection.crop = ScreenSelection.fitting(source.size) }
-                    .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 7).glass(.capsule, interactive: true)
+                    .buttonStyle(.plain).font(Theme.buttonFont)
+                    .padding(.horizontal, 14).padding(.vertical, 8).glass(.capsule, interactive: true)
                 Text("Drag the frame to move it, its corners to resize, or pinch to zoom.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                    .font(Theme.noteFont).foregroundStyle(Theme.label)
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Use") { done(selection); dismiss() }
@@ -60,13 +60,13 @@ struct ScreenCropSheet: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Caption("On the controller · 160 × 80")
                 ScreenPreview(source: source, selection: selection, scale: 2)
             }
             if source.count > 1 {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     ValueSlider(title: "First frame", range: 1...Double(source.count), value: selection.first + 1) { v in
                         selection.first = min(v - 1, selection.last)
                         selection.last = min(selection.last, selection.first + Screen.maxFrames - 1)
@@ -76,7 +76,7 @@ struct ScreenCropSheet: View {
                         selection.first = max(selection.first, selection.last - Screen.maxFrames + 1)
                     }
                     Text("Keeping \(selection.last - selection.first + 1) of \(source.count) frames. The controller takes up to \(Screen.maxFrames) and plays them at its own speed.")
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                        .font(Theme.noteFont).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()

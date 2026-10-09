@@ -25,7 +25,7 @@ struct MacroEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             Caption("Plays")
             ChipPicker(options: Macro.Mode.allCases, selection: mode, label: label) { mode = $0; dirty = true }
-            Text(detail(mode)).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+            Text(detail(mode)).font(Theme.noteFont).foregroundStyle(Theme.label)
             if mode != .once {
                 ValueSlider(title: "Pause between repeats", range: 0...250, unit: " ms", value: interval) { v in
                     interval = (v + 5) / 10 * 10
@@ -39,7 +39,7 @@ struct MacroEditor: View {
                 Spacer()
                 if let last = shown.last {
                     Text(String(format: "%.2f s", Double(last.time) / 1000))
-                        .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.label)
+                        .font(Theme.monoFont).foregroundStyle(Theme.label)
                 }
             }
             if recording {
@@ -54,7 +54,7 @@ struct MacroEditor: View {
                 if !recording { libraryMenu }
             }
             if !service.canRead && !recording {
-                Text("Recording needs Full controller, in settings.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text("Recording needs Full controller, in settings.").font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         }
         if !recording { footer }
@@ -70,17 +70,17 @@ struct MacroEditor: View {
             ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
                 HStack(spacing: 10) {
                     Image(systemName: step.press ? "arrow.down.circle.fill" : "arrow.up.circle")
-                        .font(.system(size: 13))
+                        .font(Theme.bodyFont)
                         .foregroundStyle(step.press ? Theme.glow : Theme.label)
                     Text(step.key.shortName)
                         .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                         .frame(minWidth: 30)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(Color.white.opacity(step.press ? 0.1 : 0.04), in: .rect(cornerRadius: 6))
-                    Text(step.press ? "press" : "release").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    Text(step.press ? "press" : "release").font(Theme.detailFont).foregroundStyle(Theme.secondary)
                     Spacer()
                     if i == 0 {
-                        Text("start").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                        Text("start").font(Theme.noteFont).foregroundStyle(Theme.label)
                     } else {
                         GapField(ms: gap(at: i)) { setGap($0, at: i) }
                     }
@@ -103,9 +103,9 @@ struct MacroEditor: View {
             Circle().fill(Color.red).frame(width: 9, height: 9).bloom(true, radius: 6)
                 .phaseAnimator([1.0, 0.35]) { $0.opacity($1) } animation: { _ in .easeInOut(duration: 0.6) }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Recording").font(.system(size: 13, weight: .semibold))
+                Text("Recording").font(Theme.buttonFont)
                 Text(shown.isEmpty ? "Press buttons on the controller…" : "\(shown.count) steps")
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary).monospacedDigit()
+                    .font(Theme.detailFont).foregroundStyle(Theme.secondary).monospacedDigit()
             }
             Spacer()
         }
@@ -138,7 +138,7 @@ struct MacroEditor: View {
             }
         } label: {
             Label("Library", systemImage: "books.vertical")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(Theme.buttonFont)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .glass(.capsule, interactive: true)
         }
@@ -162,7 +162,7 @@ struct MacroEditor: View {
             }
         } label: {
             Label(recording ? "Stop" : "Record", systemImage: recording ? "stop.fill" : "record.circle")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(Theme.buttonFont)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .glass(.capsule, tint: recording ? Color.red.opacity(0.35) : nil, interactive: true)
         }
@@ -185,8 +185,8 @@ struct MacroEditor: View {
                     }
                 } label: {
                     Text(saved == nil ? "Save macro" : "Save changes")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .font(Theme.buttonFont)
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                         .background(canSave ? Theme.accent : Color.white.opacity(0.06), in: .capsule)
                         .foregroundStyle(canSave ? .white : Theme.label)
                         .bloom(canSave, radius: 8)
@@ -199,10 +199,10 @@ struct MacroEditor: View {
             }
             if saved == nil && slotsLeft <= 0 {
                 Text("This profile already has \(Profile.maxMacros) macros, the most it can hold.")
-                    .font(.system(size: 11.5)).foregroundStyle(.orange)
+                    .font(Theme.noteFont).foregroundStyle(Theme.warning)
             } else {
                 Text("\(slotsLeft) of \(Profile.maxMacros) macro slots free on this profile · \(steps.count)/\(Profile.maxMacroSteps) steps")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                    .font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         }
         .onAppear { load(saved) }
@@ -274,7 +274,7 @@ private struct GapField: View {
                 .onChange(of: focused) { _, f in if !f { apply() } }
             Text("ms").foregroundStyle(Theme.label)
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(Theme.monoFont)
         .padding(.horizontal, 7).padding(.vertical, 3)
         .background(Color.white.opacity(focused ? 0.1 : 0.05), in: .capsule)
         .onAppear { text = "\(ms)" }

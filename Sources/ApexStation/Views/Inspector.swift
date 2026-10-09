@@ -13,7 +13,7 @@ struct Inspector: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     Caption(subtitle)
-                    Text(title).font(.system(size: 26, weight: .semibold))
+                    Text(title).font(Theme.titleFont)
                 }
                 Spacer()
                 Button(action: close) {
@@ -97,7 +97,7 @@ struct Note: View {
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
-        Text(text).font(.system(size: 13)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(Theme.bodyFont).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -146,7 +146,7 @@ private struct ButtonPanel: View {
             }
             if mode != .key {
                 Text("Saved to profile \(profile.slot + 1) on the controller. It applies over Bluetooth and in Switch mode; Steam and SDL games read the buttons themselves and skip it.")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                    .font(Theme.noteFont).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
             }
         } else {
             if service.connected { Note("Reading the controller's profiles…") }
@@ -176,11 +176,11 @@ private struct TurboSection: View {
             }
             if let turbo {
                 HStack {
-                    Text("Speed").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                    Text("Speed").font(Theme.detailFont).foregroundStyle(Theme.secondary)
                     Slider(value: Binding(get: { speed }, set: { speed = $0.rounded() }), in: 1...30) { editing in
                         if !editing { Task { await service.setTurbo(key, (turbo.mode, UInt8(speed))) } }
                     }
-                    Text("\(Int(speed))/s").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 36)
+                    Text("\(Int(speed))/s").font(Theme.monoFont).foregroundStyle(Theme.secondary).frame(width: 36)
                 }
             }
         }
@@ -329,7 +329,7 @@ struct CurveEditor: View {
             }
             .background(Color.black.opacity(0.25), in: .rect(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.stroke))
-            Text(readout).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+            Text(readout).font(Theme.noteFont).foregroundStyle(Theme.label)
         }
         .onChange(of: config) { _, _ in if dragging == nil { draft = nil } }
     }
@@ -466,13 +466,13 @@ private struct StickPlot: View {
                     reach = reach == nil ? Array(repeating: 0, count: Self.bins) : nil
                 } label: {
                     Label(reach == nil ? "Test circularity" : "Stop test", systemImage: reach == nil ? "circle.dashed" : "stop.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Theme.buttonFont)
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .glass(.capsule, interactive: true)
                 }
                 .buttonStyle(.plain)
                 .disabled(!live)
-                Text(testReadout).font(.system(size: 11.5)).foregroundStyle(Theme.label).monospacedDigit()
+                Text(testReadout).font(Theme.noteFont).foregroundStyle(Theme.label).monospacedDigit()
             }
         }
         .onChange(of: position) { _, _ in
@@ -562,7 +562,7 @@ struct ValueSlider: View {
                 Slider(value: Binding(get: { current }, set: { current = $0.rounded() }), in: range) { editing in
                     if !editing { commit(Int(current)) }
                 }
-                Text("\(Int(current))\(unit)").font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 44, alignment: .trailing)
+                Text("\(Int(current))\(unit)").font(Theme.monoFont).foregroundStyle(Theme.secondary).frame(width: 44, alignment: .trailing)
             }
         }
         .onAppear { current = Double(value) }
@@ -590,7 +590,7 @@ private struct TriggerPanel: View {
                     ForEach(Mode.allCases, id: \.self) { m in
                         let on = mode(t.effect) == m
                         Button { save(t) { $0.effect = effect(for: m) } } label: {
-                            Text(m.rawValue).font(.system(size: 12, weight: .semibold))
+                            Text(m.rawValue).font(Theme.buttonFont)
                                 .frame(maxWidth: .infinity, minHeight: 32)
                                 .foregroundStyle(on ? .white : Theme.secondary)
                                 .background(on ? Theme.accent : Color.white.opacity(0.06), in: .rect(cornerRadius: 9))
@@ -599,7 +599,7 @@ private struct TriggerPanel: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Text(describe(mode(t.effect))).font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                Text(describe(mode(t.effect))).font(Theme.noteFont).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
             }
             effectSliders(t)
         }
@@ -684,7 +684,7 @@ private struct VibrationPanel: View {
                 ValueSlider(title: "Right motor (fine)", range: 0...100, unit: "%", value: v.right) { x in save(v) { $0.right = x } }
             }
             Button { Task { await service.testRumble() } } label: {
-                Label("Test rumble", systemImage: "waveform").font(.system(size: 12.5, weight: .semibold))
+                Label("Test rumble", systemImage: "waveform").font(Theme.buttonFont)
                     .frame(maxWidth: .infinity).padding(.vertical, 8)
                     .glass(.capsule, tint: Theme.accent.opacity(0.35), interactive: true)
             }
@@ -721,22 +721,22 @@ private struct GyroPanel: View {
                     }
                     ValueSlider(title: "Stick dead zone offset", range: 0...50, value: g.deadZone) { v in save(g) { $0.deadZone = v } }
                     Text("Starts the stick past the game's own dead zone, so small tilts register.")
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                        .font(Theme.noteFont).foregroundStyle(Theme.label)
                 }
                 ValueSlider(title: "Sensitivity", range: 1...100, value: g.sensitivity) { v in save(g) { $0.sensitivity = v } }
                 if g.target == .leftStick || g.target == .rightStick {
                     Text("Works over Bluetooth and in Switch mode. Steam and SDL games read the gyro themselves; set it up in Steam Input there.")
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                        .font(Theme.noteFont).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
                 }
                 if g.target == .mouse {
                     Text("Turning the controller moves the pointer, done by Apex Station like Space Station does on Windows.")
-                        .font(.system(size: 11.5)).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
+                        .font(Theme.noteFont).foregroundStyle(Theme.label).fixedSize(horizontal: false, vertical: true)
                     KeyboardMouseStatus()
                 }
                 SettingRow(title: "Racing tilt", detail: "Steer by tilting instead of aiming.") {
                     GlowToggle(isOn: Binding(get: { g.racing }, set: { on in save(g) { $0.racing = on } }))
                 }
-                Text("Gyro lowers the controller's report rate while it's on.").font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text("Gyro lowers the controller's report rate while it's on.").font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         }
     }
@@ -805,7 +805,7 @@ private struct LightingPanel: View {
                             setColor(.init(r: UInt8(c.redComponent * 255), g: UInt8(c.greenComponent * 255), b: UInt8(c.blueComponent * 255)), l)
                         }
                     }), supportsOpacity: false)
-                    .font(.system(size: 12.5))
+                    .font(Theme.detailFont)
                 }
             }
             SettingRow(title: "Vibration light effect", detail: "The lights flash along when the grips vibrate.") {

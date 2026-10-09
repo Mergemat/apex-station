@@ -12,12 +12,12 @@ struct SettingsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Settings").font(.system(size: 22, weight: .semibold))
+                Text("Settings").font(Theme.titleFont)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     if service.connected {
                         controller
                     } else if service.bluetooth {
@@ -45,7 +45,7 @@ struct SettingsSheet: View {
 
     @ViewBuilder private var controller: some View {
         Card(title: "Controller") {
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 if service.fullControllerEnabled != nil {
                     SettingRow(title: "Full controller", detail: "Steam and SDL games read the controller directly: back paddles, gyro, 1000 Hz. They use their own settings then, so the controller's remaps, gyro-to-stick and macros apply only over Bluetooth or in Switch mode.") {
                         GlowToggle(isOn: Binding(get: { service.fullControllerEnabled ?? false }, set: { on in
@@ -90,7 +90,7 @@ struct SettingsSheet: View {
 
     private var app: some View {
         Card(title: "Apex Station") {
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 SettingRow(title: "Keyboard & mouse", detail: "Buttons, sticks and gyro you've set to keys or the mouse type and move the pointer. Needs Accessibility permission.") {
                     GlowToggle(isOn: Binding(get: { service.keyboardMouseOn }, set: { service.setKeyboardMouse($0) }))
                 }
@@ -115,9 +115,9 @@ struct SettingsSheet: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.label)
+            Text(label).font(Theme.detailFont).foregroundStyle(Theme.label)
             Spacer()
-            Text(value).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Theme.secondary)
+            Text(value).font(Theme.monoFont).foregroundStyle(Theme.secondary)
         }
     }
 

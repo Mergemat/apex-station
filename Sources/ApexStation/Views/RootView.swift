@@ -65,7 +65,7 @@ struct RootView: View {
             StatusBadge()
             Button { showingSettings = true } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(Theme.headingFont)
                     .frame(width: 34, height: 34)
                     .glass(.circle, interactive: true)
             }
@@ -93,16 +93,18 @@ struct RootView: View {
                     }
                     .pointerStyle(hovered == nil ? .default : .link)
             }
-            .padding(28)
+            .padding([.horizontal, .top], 28)
+            // Room for the chips along the bottom, so the paddles never run into them.
+            .padding(.bottom, 64)
             HStack {
                 ForEach([(ControllerControl.vibration, "Vibration", "waveform"), (.gyro, "Gyro", "gyroscope"), (.lighting, "Lighting", "lightbulb.led"),
                          (.test, "Test", "gamecontroller")], id: \.1) { c, title, icon in
                     let on = selected == c
                     Button { selected = on ? nil : c } label: {
                         Label(title, systemImage: icon)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(Theme.buttonFont)
                             .foregroundStyle(on ? .white : Theme.secondary)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .background(on ? Theme.accent : Color.white.opacity(0.06), in: .capsule)
                             .overlay(Capsule().strokeBorder(on ? Theme.glow.opacity(0.6) : Theme.stroke))
                             .bloom(on, radius: 8)
@@ -135,7 +137,7 @@ struct RootView: View {
         }
         if let text {
             Text(text)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(Theme.detailFont.weight(.medium))
                 .foregroundStyle(Theme.secondary)
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .glass(.capsule)
@@ -163,7 +165,7 @@ private struct ProfileSwitcher: View {
                 Button { Task { await service.useProfile(slot) } } label: {
                     HStack(spacing: 6) {
                         Text("\(slot + 1)").font(.system(size: 13, weight: .bold, design: .rounded))
-                        if active, let profile { Text(displayName(profile)).font(.system(size: 12, weight: .medium)).lineLimit(1) }
+                        if active, let profile { Text(displayName(profile)).font(Theme.detailFont.weight(.medium)).lineLimit(1) }
                     }
                     .foregroundStyle(active ? .white : Theme.secondary)
                     .padding(.horizontal, 14)
@@ -218,12 +220,12 @@ private struct StatusBadge: View {
             if !service.connected, let battery = service.bluetoothBattery {
                 Label("\(battery)%", systemImage: "battery.100percent")
                     .labelStyle(.titleAndIcon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(Theme.detailFont.weight(.medium))
                     .foregroundStyle(Theme.secondary)
             } else if let info = service.info {
                 Label("\(info.batteryPercent)%", systemImage: info.charging == .onBattery ? "battery.100percent" : "battery.100percent.bolt")
                     .labelStyle(.titleAndIcon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(Theme.detailFont.weight(.medium))
                     .foregroundStyle(Theme.secondary)
             }
             HStack(spacing: 6) {
@@ -231,7 +233,7 @@ private struct StatusBadge: View {
                     .fill(service.live ? Theme.glow : service.connected || service.bluetooth ? Theme.accent : Color.white.opacity(0.25))
                     .frame(width: 7, height: 7)
                     .bloom(service.live, radius: 5)
-                Text(text).font(.system(size: 12, weight: .medium)).monospacedDigit().foregroundStyle(Theme.secondary)
+                Text(text).font(Theme.detailFont.weight(.medium)).monospacedDigit().foregroundStyle(Theme.secondary)
             }
         }
         .padding(.horizontal, 12)

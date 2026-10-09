@@ -29,7 +29,7 @@ struct AssignCard<Extra: View>: View {
             HStack(spacing: 8) {
                 Button { waiting ? cancel() : assign() } label: {
                     Label(waiting ? "Cancel" : "Assign", systemImage: waiting ? "xmark" : "hand.point.up.left.fill")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(Theme.buttonFont)
                         .frame(maxWidth: .infinity).padding(.vertical, 8)
                         .glass(.capsule, tint: waiting ? nil : Theme.accent.opacity(0.35), interactive: true)
                 }
@@ -39,7 +39,7 @@ struct AssignCard<Extra: View>: View {
                 if let reset, isSet, !waiting {
                     Button(action: reset) {
                         Label(resetTitle, systemImage: "arrow.uturn.backward")
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(Theme.buttonFont)
                             .frame(maxWidth: .infinity).padding(.vertical, 8)
                             .glass(.capsule, interactive: true)
                     }
@@ -48,7 +48,7 @@ struct AssignCard<Extra: View>: View {
                 if !waiting { extra }
             }
             if !canAssign, let unavailable {
-                Text(unavailable).font(.system(size: 11.5)).foregroundStyle(Theme.label)
+                Text(unavailable).font(Theme.noteFont).foregroundStyle(Theme.label)
             }
         }
         .animation(.easeOut(duration: 0.18), value: waiting)
@@ -67,8 +67,8 @@ struct AssignCard<Extra: View>: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(isSet ? Theme.glow.opacity(0.6) : Theme.stroke))
                 .bloom(isSet, radius: 10)
             VStack(alignment: .leading, spacing: 3) {
-                Text(waiting ? waitingTitle : title).font(.system(size: 14, weight: .semibold))
-                Text(waiting ? waitingSubtitle : subtitle).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                Text(waiting ? waitingTitle : title).font(Theme.headingFont)
+                Text(waiting ? waitingSubtitle : subtitle).font(Theme.detailFont).foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)

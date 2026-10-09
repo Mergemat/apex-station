@@ -15,6 +15,26 @@ enum Theme {
     static let stroke = Color.white.opacity(0.10)
     static let label = Color.white.opacity(0.42)
     static let secondary = Color.white.opacity(0.62)
+    /// Problems and things to fix.
+    static let warning = Color(red: 1, green: 0.66, blue: 0.3)
+
+    // Type scale: every text in the app uses one of these.
+    /// Panel and window titles.
+    static let titleFont = Font.system(size: 22, weight: .semibold)
+    /// Row and card titles.
+    static let headingFont = Font.system(size: 14, weight: .semibold)
+    /// Notes and explanations.
+    static let bodyFont = Font.system(size: 13)
+    /// Buttons, chips and menus.
+    static let buttonFont = Font.system(size: 12.5, weight: .semibold)
+    /// Subtitles and status text.
+    static let detailFont = Font.system(size: 12)
+    /// Helper text under controls.
+    static let noteFont = Font.system(size: 11.5)
+    /// Small text buttons.
+    static let linkFont = Font.system(size: 11.5, weight: .semibold)
+    /// Numbers and logs.
+    static let monoFont = Font.system(size: 11.5, design: .monospaced)
 }
 
 extension View {
@@ -128,12 +148,12 @@ struct ChipPicker<Value: Hashable>: View {
                 let selected = option == selection
                 Button { onSelect(option) } label: {
                     Text(label(option))
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                        .font(Theme.buttonFont)
                         .lineLimit(1)
                         .fixedSize()
                         .foregroundStyle(selected ? .white : Theme.secondary)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, 8)
                         .background(selected ? Theme.accent : Color.white.opacity(0.05), in: .capsule)
                         .overlay(Capsule().stroke(selected ? Theme.glow.opacity(0.5) : Theme.stroke))
                         .bloom(selected, radius: 8)
@@ -171,9 +191,9 @@ struct SettingRow<Control: View>: View {
 
     private var text: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 13.5, weight: .medium))
+            Text(title).font(Theme.headingFont)
             if let detail {
-                Text(detail).font(.system(size: 12)).foregroundStyle(Theme.label)
+                Text(detail).font(Theme.detailFont).foregroundStyle(Theme.label)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

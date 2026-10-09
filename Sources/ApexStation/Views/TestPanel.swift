@@ -12,7 +12,7 @@ struct TestPanel: View {
             Note(liveHint)
             if service.connected, service.fullControllerEnabled == false {
                 Button("Turn on Full controller") { Task { await service.setFullController(true) } }
-                    .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.glow)
+                    .buttonStyle(.plain).font(Theme.buttonFont).foregroundStyle(Theme.glow)
             }
         }
         let s = service.state
@@ -35,9 +35,9 @@ struct TestPanel: View {
             HStack(alignment: .firstTextBaseline) {
                 Caption("Log")
                 Spacer()
-                Text(reports).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.label)
+                Text(reports).font(Theme.monoFont).foregroundStyle(Theme.label)
                 Button("Clear") { service.clearInputLog() }
-                    .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.secondary)
+                    .buttonStyle(.plain).font(Theme.linkFont).foregroundStyle(Theme.secondary)
                     .padding(.leading, 6)
             }
             log
@@ -76,7 +76,7 @@ struct TestPanel: View {
                 }
             }
         }
-        .font(.system(size: 11.5, design: .monospaced))
+        .font(Theme.monoFont)
         .lineLimit(1)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,7 +95,7 @@ private struct Meter: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(name).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.secondary).frame(width: 22, alignment: .leading)
+            Text(name).font(Theme.linkFont).foregroundStyle(Theme.secondary).frame(width: 22, alignment: .leading)
             GeometryReader { geo in
                 let w = geo.size.width, v = min(1, max(centred ? -1 : 0, value))
                 ZStack(alignment: .leading) {
@@ -110,7 +110,7 @@ private struct Meter: View {
                 }
             }
             .frame(height: 8)
-            Text(text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.label).frame(width: 44, alignment: .trailing)
+            Text(text).font(Theme.monoFont).foregroundStyle(Theme.label).frame(width: 44, alignment: .trailing)
         }
     }
 }

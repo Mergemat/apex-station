@@ -99,8 +99,8 @@ struct ControllerDrawing: View {
             lit.clip(to: p)
             lit.fill(L.lines, with: .color(.white))
         }
-        label(&ctx, "LB", at: ControllerArt.lbLabel, size: 8, color: b.contains(.leftBumper) ? .white : .white.opacity(0.8))
-        label(&ctx, "RB", at: ControllerArt.rbLabel, size: 8, color: b.contains(.rightBumper) ? .white : .white.opacity(0.8))
+        label(&ctx, "LB", at: ControllerArt.lbLabel, size: 10, color: b.contains(.leftBumper) ? .white : .white.opacity(0.8))
+        label(&ctx, "RB", at: ControllerArt.rbLabel, size: 10, color: b.contains(.rightBumper) ? .white : .white.opacity(0.8))
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
         caption(&ctx, "BACK", CGPoint(x: 250, y: 426))
