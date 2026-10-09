@@ -26,8 +26,6 @@ final class ControllerService {
     @ObservationIgnored private let channel = SettingsChannel()
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
-    @ObservationIgnored private var latest = GamepadState()
-    @ObservationIgnored private var reportCount = 0
 
     func start() {
         Task { await channel.start() }
@@ -122,9 +120,6 @@ final class ControllerService {
                 keepAlive = nil
                 live = false
                 state = GamepadState()
-            case .input(let s):
-                latest = s
-                reportCount += 1
             }
         }
     }
@@ -147,14 +142,15 @@ final class ControllerService {
 
     /// Redraw at display rate, not at the controller's ~1000 Hz.
     private func refreshUI() async {
-        var lastCount = 0
+        var lastCount = channel.live.snapshot().count
         var lastRateAt = ContinuousClock.now
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(16))
-            if live, latest != state { state = latest }
+            let snap = channel.live.snapshot()
+            if live, snap.state != state { state = snap.state }
             if ContinuousClock.now - lastRateAt >= .seconds(1) {
-                reportRate = live ? reportCount - lastCount : 0
-                lastCount = reportCount
+                reportRate = live ? snap.count - lastCount : 0
+                lastCount = snap.count
                 lastRateAt = .now
             }
         }

@@ -27,8 +27,7 @@ struct ControllerPage: View {
                            center: .center, startRadius: 20, endRadius: 380)
             ControllerDrawing(state: service.state, live: service.live)
                 .padding(.horizontal, 24)
-                .padding(.top, 44)
-                .padding(.bottom, 12)
+                .padding(.vertical, 18)
             VStack(alignment: .leading, spacing: 6) {
                 Text((service.info?.modelName ?? "Apex 5").uppercased())
                     .font(.system(size: 34, weight: .thin))
@@ -54,7 +53,7 @@ struct ControllerPage: View {
                     .padding(.bottom, 22)
             }
         }
-        .frame(height: 520)
+        .frame(height: 620)
         .clipShape(.rect(cornerRadius: 28))
         .glass(.rect(cornerRadius: 28))
         .animation(.easeOut(duration: 0.4), value: service.live)

@@ -5,6 +5,10 @@ import SwiftUI
 struct ApexStationApp: App {
     @ViewState private var service = ControllerService()
 
+    init() {
+        RenderCommands.runIfRequested()
+    }
+
     var body: some Scene {
         Window("Apex Station", id: "main") {
             RootView()

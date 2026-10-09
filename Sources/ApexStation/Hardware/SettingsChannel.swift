@@ -8,8 +8,11 @@ actor SettingsChannel {
     enum Event: Sendable {
         case connected
         case disconnected
-        case input(GamepadState)
     }
+
+    /// Latest input and a running report count, written at the controller's ~1000 Hz and read
+    /// by the UI at display rate, so no report has to queue anywhere.
+    nonisolated let live = LiveInput()
 
     struct Timeout: Error {}
     struct Disconnected: Error {}
@@ -96,7 +99,7 @@ actor SettingsChannel {
         }
         guard let command = Flydigi.command(of: report) else { return }
         if command == Flydigi.Command.input.rawValue {
-            if let state = FlydigiInputReport.parse(report) { events.yield(.input(state)) }
+            if let state = FlydigiInputReport.parse(report) { live.update(state) }
             return
         }
         guard let first = waiting[command]?.first else { return }
@@ -108,5 +111,23 @@ actor SettingsChannel {
         for (_, list) in waiting { list.forEach { $0.cont.resume(throwing: Disconnected()) } }
         waiting = [:]
         events.yield(.disconnected)
+    }
+}
+
+final class LiveInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var state = GamepadState()
+    private var count = 0
+
+    func update(_ s: GamepadState) {
+        lock.lock(); defer { lock.unlock() }
+        state = s
+        count += 1
+    }
+
+    /// The latest state and how many reports have arrived in total.
+    func snapshot() -> (state: GamepadState, count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (state, count)
     }
 }

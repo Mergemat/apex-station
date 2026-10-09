@@ -1,14 +1,13 @@
 import ApexKit
 import SwiftUI
 
-/// A clean, gamepad-shaped map of every Apex 5 control, all visible at once: shoulders on top,
-/// face controls on the body, the four back paddles underneath. Built to be read at a glance,
-/// not to copy the hardware. Drawn in a 500×430 space and scaled to fit.
 struct ControllerDrawing: View {
     let state: GamepadState
     let live: Bool
 
-    private static let space = CGSize(width: 500, height: 430)
+    private static let space = CGSize(width: 500, height: 520)
+    /// The outline is 500 wide and starts below the shoulder row.
+    private static let bodyTop: CGFloat = 74
 
     var body: some View {
         Canvas { ctx, size in
@@ -22,77 +21,108 @@ struct ControllerDrawing: View {
 
     private var b: GamepadButtons { live ? state.buttons : [] }
 
+    /// Unit coordinates on the outline (x and y divided by its width) → drawing space.
+    private func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint { CGPoint(x: u * 500, y: Self.bodyTop + v * 500) }
+
     private func draw(_ ctx: inout GraphicsContext) {
-        // Shoulders: triggers show how far they're pulled; bumpers and the extra LM/RM below.
-        trigger(&ctx, CGRect(x: 52, y: 6, width: 116, height: 26), "LT", live ? state.leftTrigger : 0)
-        trigger(&ctx, CGRect(x: 332, y: 6, width: 116, height: 26), "RT", live ? state.rightTrigger : 0)
-        key(&ctx, .capsule(CGRect(x: 52, y: 40, width: 116, height: 24)), "LB", b.contains(.leftBumper))
-        key(&ctx, .capsule(CGRect(x: 332, y: 40, width: 116, height: 24)), "RB", b.contains(.rightBumper))
-        key(&ctx, .capsule(CGRect(x: 178, y: 40, width: 52, height: 24)), "LM", b.contains(.leftMacro))
-        key(&ctx, .capsule(CGRect(x: 270, y: 40, width: 52, height: 24)), "RM", b.contains(.rightMacro))
+        // Shoulder row above the body: triggers fill with how far they're pulled.
+        trigger(&ctx, CGRect(x: 58, y: 18, width: 104, height: 26), "LT", live ? state.leftTrigger : 0)
+        trigger(&ctx, CGRect(x: 338, y: 18, width: 104, height: 26), "RT", live ? state.rightTrigger : 0)
+        key(&ctx, .capsule(CGRect(x: 172, y: 18, width: 46, height: 26)), "LM", b.contains(.leftMacro))
+        key(&ctx, .capsule(CGRect(x: 282, y: 18, width: 46, height: 26)), "RM", b.contains(.rightMacro))
 
-        shell(&ctx)
-
-        stick(&ctx, CGPoint(x: 126, y: 152), live ? state.leftStick : .init(), "L3", b.contains(.leftStick))
-        stick(&ctx, CGPoint(x: 314, y: 232), live ? state.rightStick : .init(), "R3", b.contains(.rightStick))
-        dpad(&ctx, CGPoint(x: 186, y: 232))
-        key(&ctx, .circle(CGPoint(x: 374, y: 186), 15), "A", b.contains(.a))
-        key(&ctx, .circle(CGPoint(x: 408, y: 152), 15), "B", b.contains(.b))
-        key(&ctx, .circle(CGPoint(x: 340, y: 152), 15), "X", b.contains(.x))
-        key(&ctx, .circle(CGPoint(x: 374, y: 118), 15), "Y", b.contains(.y))
-        iconKey(&ctx, .capsule(CGRect(x: 196, y: 120, width: 34, height: 18)), "rectangle.on.rectangle", b.contains(.back))
-        iconKey(&ctx, .capsule(CGRect(x: 270, y: 120, width: 34, height: 18)), "line.3.horizontal", b.contains(.start))
-        home(&ctx, CGPoint(x: 250, y: 129), b.contains(.guide))
-        key(&ctx, .capsule(CGRect(x: 214, y: 168, width: 34, height: 16)), "TURBO", b.contains(.c), small: true)
-        key(&ctx, .capsule(CGRect(x: 252, y: 168, width: 34, height: 16)), "FN", b.contains(.z), small: true)
+        let shell = ApexOutline.path(width: 500, origin: CGPoint(x: 0, y: Self.bodyTop))
+        drawShell(&ctx, shell)
+        bumper(&ctx, shell, left: true, on: b.contains(.leftBumper))
+        bumper(&ctx, shell, left: false, on: b.contains(.rightBumper))
+        faceplate(&ctx)
         lightBar(&ctx)
 
-        // The four back paddles, kept on their side and in their row.
-        caption(&ctx, "BACK PADDLES", CGPoint(x: 250, y: 352))
-        key(&ctx, .capsule(CGRect(x: 92, y: 340, width: 92, height: 26)), "M2", b.contains(.m2))
-        key(&ctx, .capsule(CGRect(x: 92, y: 374, width: 92, height: 26)), "M4", b.contains(.m4))
-        key(&ctx, .capsule(CGRect(x: 316, y: 340, width: 92, height: 26)), "M1", b.contains(.m1))
-        key(&ctx, .capsule(CGRect(x: 316, y: 374, width: 92, height: 26)), "M3", b.contains(.m3))
+        stick(&ctx, at(0.2373, 0.1793), live ? state.leftStick : .init(), "L3", b.contains(.leftStick))
+        stick(&ctx, at(0.6226, 0.3532), live ? state.rightStick : .init(), "R3", b.contains(.rightStick))
+        dpad(&ctx, at(0.3649, 0.3492))
+        key(&ctx, .circle(at(0.7619, 0.2514), 16), "A", b.contains(.a))
+        key(&ctx, .circle(at(0.8277, 0.1887), 16), "B", b.contains(.b))
+        key(&ctx, .circle(at(0.6922, 0.1879), 16), "X", b.contains(.x))
+        key(&ctx, .circle(at(0.7588, 0.1214), 16), "Y", b.contains(.y))
+        smallKey(&ctx, at(0.3720, 0.0799), degrees: 50, icon: "rectangle.on.rectangle", on: b.contains(.back))
+        smallKey(&ctx, at(0.6226, 0.0799), degrees: -50, icon: "line.3.horizontal", on: b.contains(.start))
+        home(&ctx, at(0.4965, 0.0673), on: b.contains(.guide))
+
+        // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
+        caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
+        key(&ctx, .capsule(CGRect(x: 40, y: 446, width: 100, height: 26)), "M2", b.contains(.m2))
+        key(&ctx, .capsule(CGRect(x: 40, y: 480, width: 100, height: 26)), "M4", b.contains(.m4))
+        key(&ctx, .capsule(CGRect(x: 360, y: 446, width: 100, height: 26)), "M1", b.contains(.m1))
+        key(&ctx, .capsule(CGRect(x: 360, y: 480, width: 100, height: 26)), "M3", b.contains(.m3))
+        key(&ctx, .capsule(CGRect(x: 196, y: 476, width: 50, height: 22)), "TURBO", b.contains(.c), small: true)
+        key(&ctx, .capsule(CGRect(x: 254, y: 476, width: 50, height: 22)), "FN", b.contains(.z), small: true)
     }
 
     // MARK: - Body
 
-    private func shell(_ ctx: inout GraphicsContext) {
-        var p = Path()
-        p.move(to: CGPoint(x: 250, y: 76))
-        p.addCurve(to: CGPoint(x: 438, y: 82), control1: CGPoint(x: 330, y: 76), control2: CGPoint(x: 400, y: 72))
-        p.addCurve(to: CGPoint(x: 484, y: 200), control1: CGPoint(x: 474, y: 92), control2: CGPoint(x: 486, y: 140))
-        p.addCurve(to: CGPoint(x: 446, y: 322), control1: CGPoint(x: 482, y: 262), control2: CGPoint(x: 476, y: 310))
-        p.addCurve(to: CGPoint(x: 380, y: 296), control1: CGPoint(x: 420, y: 332), control2: CGPoint(x: 394, y: 320))
-        p.addCurve(to: CGPoint(x: 250, y: 282), control1: CGPoint(x: 356, y: 284), control2: CGPoint(x: 300, y: 282))
-        p.addCurve(to: CGPoint(x: 120, y: 296), control1: CGPoint(x: 200, y: 282), control2: CGPoint(x: 144, y: 284))
-        p.addCurve(to: CGPoint(x: 54, y: 322), control1: CGPoint(x: 106, y: 320), control2: CGPoint(x: 80, y: 332))
-        p.addCurve(to: CGPoint(x: 16, y: 200), control1: CGPoint(x: 24, y: 310), control2: CGPoint(x: 18, y: 262))
-        p.addCurve(to: CGPoint(x: 62, y: 82), control1: CGPoint(x: 14, y: 140), control2: CGPoint(x: 26, y: 92))
-        p.addCurve(to: CGPoint(x: 250, y: 76), control1: CGPoint(x: 100, y: 72), control2: CGPoint(x: 170, y: 76))
-        p.closeSubpath()
-
+    private func drawShell(_ ctx: inout GraphicsContext, _ shell: Path) {
         var shadow = ctx
         shadow.addFilter(.blur(radius: 24))
         shadow.translateBy(x: 0, y: 16)
-        shadow.fill(p, with: .color(.black.opacity(0.4)))
-        ctx.fill(p, with: .linearGradient(Gradient(colors: [.white.opacity(0.14), .white.opacity(0.05)]),
-                                          startPoint: CGPoint(x: 250, y: 76), endPoint: CGPoint(x: 250, y: 330)))
-        ctx.stroke(p, with: .linearGradient(Gradient(colors: [.white.opacity(0.35), .white.opacity(0.08)]),
-                                            startPoint: CGPoint(x: 250, y: 76), endPoint: CGPoint(x: 250, y: 330)),
+        shadow.fill(shell, with: .color(.black.opacity(0.4)))
+        ctx.fill(shell, with: .linearGradient(Gradient(colors: [.white.opacity(0.15), .white.opacity(0.05)]),
+                                              startPoint: at(0.5, 0), endPoint: at(0.5, 0.7)))
+        ctx.stroke(shell, with: .linearGradient(Gradient(colors: [.white.opacity(0.38), .white.opacity(0.08)]),
+                                                startPoint: at(0.5, 0), endPoint: at(0.5, 0.7)),
                    lineWidth: 1.2)
     }
 
+    /// A bumper is a strip of even thickness along the outline's top edge, over the hump
+    /// (12-34 % of the width, measured), so it follows the controller's curve exactly.
+    private func bumper(_ ctx: inout GraphicsContext, _ shell: Path, left: Bool, on: Bool) {
+        let thickness: CGFloat = 13
+        let span = left ? CGRect(x: 0.12 * 500, y: Self.bodyTop - 10, width: 0.22 * 500, height: 40)
+                        : CGRect(x: 0.66 * 500, y: Self.bodyTop - 10, width: 0.22 * 500, height: 40)
+        var strip = ctx
+        strip.clip(to: Path(roundedRect: span, cornerRadius: 12))
+        strip.clip(to: shell)
+        strip.clip(to: shell.applying(.init(translationX: 0, y: thickness)), options: .inverse)
+        if on {
+            var g = strip
+            g.addFilter(.blur(radius: 6))
+            g.fill(Path(span), with: .color(Theme.accent))
+        }
+        strip.fill(Path(span), with: on
+            ? .linearGradient(Gradient(colors: [Theme.glow, Theme.accent]), startPoint: span.origin,
+                              endPoint: CGPoint(x: span.maxX, y: span.maxY))
+            : .color(.white.opacity(0.16)))
+        ctx.draw(Text(left ? "LB" : "RB").font(.system(size: 9.5, weight: .bold, design: .rounded))
+            .foregroundStyle(on ? Color.white : Color.white.opacity(0.5)),
+                 at: CGPoint(x: span.midX, y: Self.bodyTop + 22))
+    }
+
+    private func faceplate(_ ctx: inout GraphicsContext) {
+        let corners = [(0.320, 0.026), (0.680, 0.026), (0.672, 0.104), (0.548, 0.248), (0.452, 0.248), (0.328, 0.104)]
+        var p = Path()
+        p.addLines(corners.map { at($0.0, $0.1) })
+        p.closeSubpath()
+        ctx.fill(p, with: .color(.black.opacity(0.18)))
+        ctx.stroke(p, with: .color(.white.opacity(0.12)), lineWidth: 0.8)
+    }
+
+    /// The light bar's path, measured from the photo.
     private func lightBar(_ ctx: inout GraphicsContext) {
+        let pts = [(0.1621, 0.5889), (0.2060, 0.5489), (0.2529, 0.5121), (0.2999, 0.4965), (0.3469, 0.4949),
+                   (0.5, 0.4945), (0.6528, 0.4949), (0.6998, 0.4965), (0.7468, 0.5121), (0.7937, 0.5489), (0.8379, 0.5889)]
         var bar = Path()
-        bar.move(to: CGPoint(x: 150, y: 293))
-        bar.addCurve(to: CGPoint(x: 350, y: 293), control1: CGPoint(x: 200, y: 278), control2: CGPoint(x: 300, y: 278))
+        bar.move(to: at(pts[0].0, pts[0].1))
+        for i in 1..<pts.count {
+            let a = at(pts[i - 1].0, pts[i - 1].1), c = at(pts[i].0, pts[i].1)
+            bar.addQuadCurve(to: CGPoint(x: (a.x + c.x) / 2, y: (a.y + c.y) / 2), control: a)
+        }
+        bar.addLine(to: at(pts.last!.0, pts.last!.1))
         if live {
             var g = ctx
-            g.addFilter(.blur(radius: 6))
-            g.stroke(bar, with: .color(Theme.accent), style: .init(lineWidth: 6, lineCap: .round))
+            g.addFilter(.blur(radius: 7))
+            g.stroke(bar, with: .color(Theme.accent), style: .init(lineWidth: 7, lineCap: .round))
         }
-        ctx.stroke(bar, with: .color(live ? Theme.glow : .white.opacity(0.12)), style: .init(lineWidth: 2, lineCap: .round))
+        ctx.stroke(bar, with: .color(live ? Theme.glow : .white.opacity(0.12)), style: .init(lineWidth: 2.4, lineCap: .round))
     }
 
     // MARK: - Controls
@@ -117,25 +147,25 @@ struct ControllerDrawing: View {
                                               startPoint: p.boundingRect.origin,
                                               endPoint: CGPoint(x: p.boundingRect.maxX, y: p.boundingRect.maxY)))
         } else {
-            ctx.fill(p, with: .color(.white.opacity(0.09)))
+            ctx.fill(p, with: .color(.white.opacity(0.10)))
         }
-        ctx.stroke(p, with: .color(.white.opacity(on ? 0.55 : 0.16)), lineWidth: 0.8)
+        ctx.stroke(p, with: .color(.white.opacity(on ? 0.55 : 0.18)), lineWidth: 0.8)
     }
 
     private func key(_ ctx: inout GraphicsContext, _ s: Shape, _ label: String, _ on: Bool, small: Bool = false) {
         let p = path(s)
         fill(&ctx, p, on: on)
         ctx.draw(Text(label).font(.system(size: small ? 7.5 : 11, weight: .bold, design: .rounded)).tracking(0.4)
-            .foregroundStyle(on ? Color.white : Color.white.opacity(0.55)),
+            .foregroundStyle(on ? Color.white : Color.white.opacity(0.6)),
                  at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY))
     }
 
-    private func iconKey(_ ctx: inout GraphicsContext, _ s: Shape, _ icon: String, _ on: Bool) {
-        let p = path(s)
+    private func smallKey(_ ctx: inout GraphicsContext, _ c: CGPoint, degrees: Double, icon: String, on: Bool) {
+        let p = Path(roundedRect: CGRect(x: -16, y: -7.5, width: 32, height: 15), cornerRadius: 7.5)
+            .applying(CGAffineTransform(rotationAngle: degrees * .pi / 180).concatenating(.init(translationX: c.x, y: c.y)))
         fill(&ctx, p, on: on)
-        ctx.draw(Text(Image(systemName: icon)).font(.system(size: 8.5, weight: .bold))
-            .foregroundStyle(on ? Color.white : Color.white.opacity(0.6)),
-                 at: CGPoint(x: p.boundingRect.midX, y: p.boundingRect.midY))
+        ctx.draw(Text(Image(systemName: icon)).font(.system(size: 7.5, weight: .bold))
+            .foregroundStyle(on ? Color.white : Color.white.opacity(0.65)), at: c)
     }
 
     private func trigger(_ ctx: inout GraphicsContext, _ r: CGRect, _ label: String, _ value: UInt8) {
@@ -152,36 +182,33 @@ struct ControllerDrawing: View {
             inner.fill(level, with: .linearGradient(Gradient(colors: [Theme.accent, Theme.glow]),
                                                     startPoint: CGPoint(x: r.minX, y: r.midY), endPoint: CGPoint(x: r.maxX, y: r.midY)))
         }
-        ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.16)), lineWidth: 0.8)
+        ctx.stroke(p, with: .color(.white.opacity(f > 0 ? 0.5 : 0.18)), lineWidth: 0.8)
         ctx.draw(Text(label).font(.system(size: 11, weight: .bold, design: .rounded))
-            .foregroundStyle(f > 0.4 ? Color.white : Color.white.opacity(0.55)), at: CGPoint(x: r.midX, y: r.midY))
+            .foregroundStyle(f > 0.4 ? Color.white : Color.white.opacity(0.6)), at: CGPoint(x: r.midX, y: r.midY))
     }
 
     private func stick(_ ctx: inout GraphicsContext, _ c: CGPoint, _ pos: StickPosition, _ label: String, _ clicked: Bool) {
         let well = path(.circle(c, 38))
         ctx.fill(well, with: .color(.black.opacity(0.28)))
-        ctx.stroke(well, with: .color(.white.opacity(0.14)), lineWidth: 1)
-        // Faint crosshair so movement reads clearly.
+        ctx.stroke(well, with: .color(.white.opacity(0.16)), lineWidth: 1)
         var cross = Path()
         cross.move(to: CGPoint(x: c.x - 30, y: c.y)); cross.addLine(to: CGPoint(x: c.x + 30, y: c.y))
         cross.move(to: CGPoint(x: c.x, y: c.y - 30)); cross.addLine(to: CGPoint(x: c.x, y: c.y + 30))
         ctx.stroke(cross, with: .color(.white.opacity(0.07)), lineWidth: 1)
-        let travel: CGFloat = 16
+        let travel: CGFloat = 15
         // Up-positive Y; screen Y grows downwards.
         let p = CGPoint(x: c.x + CGFloat(pos.x) / 32767 * travel, y: c.y - CGFloat(pos.y) / 32767 * travel)
         let moved = abs(Int(pos.x)) > 3000 || abs(Int(pos.y)) > 3000
-        let cap = path(.circle(p, 21))
+        let cap = path(.circle(p, 22))
         fill(&ctx, cap, on: clicked)
-        if moved && !clicked {
-            ctx.stroke(cap, with: .color(Theme.glow.opacity(0.8)), lineWidth: 1.5)
-        }
+        if moved && !clicked { ctx.stroke(cap, with: .color(Theme.glow.opacity(0.85)), lineWidth: 1.5) }
         ctx.draw(Text(label).font(.system(size: 9, weight: .bold, design: .rounded))
             .foregroundStyle(clicked ? Color.white : Color.white.opacity(0.35)), at: p)
     }
 
     /// Four separate arrow keys, so each direction reads on its own.
     private func dpad(_ ctx: inout GraphicsContext, _ c: CGPoint) {
-        let size: CGFloat = 25, gap: CGFloat = 15
+        let size: CGFloat = 24, gap: CGFloat = 14
         let keys: [(GamepadButtons, CGPoint, String)] = [
             (.dpadUp, CGPoint(x: c.x, y: c.y - gap - size / 2), "chevron.up"),
             (.dpadDown, CGPoint(x: c.x, y: c.y + gap + size / 2), "chevron.down"),
@@ -189,20 +216,23 @@ struct ControllerDrawing: View {
             (.dpadRight, CGPoint(x: c.x + gap + size / 2, y: c.y), "chevron.right"),
         ]
         for (button, p, icon) in keys {
-            iconKey(&ctx, .rounded(CGRect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size), 8), icon, b.contains(button))
+            let shape = path(.rounded(CGRect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size), 8))
+            fill(&ctx, shape, on: b.contains(button))
+            ctx.draw(Text(Image(systemName: icon)).font(.system(size: 9, weight: .bold))
+                .foregroundStyle(b.contains(button) ? Color.white : Color.white.opacity(0.65)), at: p)
         }
     }
 
-    private func home(_ ctx: inout GraphicsContext, _ c: CGPoint, _ on: Bool) {
+    private func home(_ ctx: inout GraphicsContext, _ c: CGPoint, on: Bool) {
         fill(&ctx, path(.circle(c, 15)), on: on)
         var v = Path()
         v.move(to: CGPoint(x: c.x - 8, y: c.y - 5))
         v.addLine(to: CGPoint(x: c.x, y: c.y + 6))
         v.addLine(to: CGPoint(x: c.x + 8, y: c.y - 5))
-        ctx.stroke(v, with: .color(on ? .white : .white.opacity(0.6)), style: .init(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+        ctx.stroke(v, with: .color(on ? .white : .white.opacity(0.65)), style: .init(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
     }
 
     private func caption(_ ctx: inout GraphicsContext, _ text: String, _ at: CGPoint) {
-        ctx.draw(Text(text).font(.system(size: 8.5, weight: .semibold)).tracking(2).foregroundStyle(Theme.label), at: at)
+        ctx.draw(Text(text).font(.system(size: 9, weight: .semibold)).tracking(2.4).foregroundStyle(Theme.label), at: at)
     }
 }
