@@ -119,12 +119,14 @@ struct ChipPicker<Value: Hashable>: View {
     let onSelect: (Value) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        FlowLayout(spacing: 6) {
             ForEach(options, id: \.self) { option in
                 let selected = option == selection
                 Button { onSelect(option) } label: {
                     Text(label(option))
                         .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(selected ? .white : Theme.secondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
@@ -143,19 +145,71 @@ struct ChipPicker<Value: Hashable>: View {
 struct SettingRow<Control: View>: View {
     let title: String
     var detail: String?
+    /// Puts the control under the text, for wide controls like a row of chips.
+    var stacked = false
     @ViewBuilder var control: Control
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .medium))
-                if let detail {
-                    Text(detail).font(.system(size: 12)).foregroundStyle(Theme.label)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        if stacked {
+            VStack(alignment: .leading, spacing: 10) {
+                text
+                control
             }
-            Spacer(minLength: 12)
-            control
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .center, spacing: 16) {
+                text
+                Spacer(minLength: 12)
+                control
+            }
         }
+    }
+
+    private var text: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 13.5, weight: .medium))
+            if let detail {
+                Text(detail).font(.system(size: 12)).foregroundStyle(Theme.label)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Lays views out left to right, starting a new row when the next one doesn't fit.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(for: subviews, width: proposal.width ?? .infinity)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(for: subviews, width: bounds.width) {
+            var x = bounds.minX
+            for i in row.items {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func rows(for subviews: Subviews, width: CGFloat) -> [(items: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(items: [Int], width: CGFloat, height: CGFloat)] = []
+        for (i, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            if let last = rows.last, last.width + spacing + size.width <= width {
+                rows[rows.count - 1] = (last.items + [i], last.width + spacing + size.width, max(last.height, size.height))
+            } else {
+                rows.append(([i], size.width, size.height))
+            }
+        }
+        return rows
     }
 }

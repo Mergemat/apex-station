@@ -44,14 +44,14 @@ struct SettingsSheet: View {
                     }
                 }
                 if let s = service.settings {
-                    SettingRow(title: "Sleep after", detail: "Press Home to wake it again.") {
+                    SettingRow(title: "Sleep after", detail: "Press Home to wake it again.", stacked: true) {
                         ChipPicker(options: DeviceSettings.sleepOptions, selection: s.sleepMinutes, label: sleepLabel) { m in
                             Task { await service.setSleep(minutes: m) }
                         }
                     }
-                    SettingRow(title: "Polling rate", detail: "How often the controller reports. Lower saves battery on wireless.") {
+                    SettingRow(title: "Polling rate", detail: "How often the controller reports. Lower saves battery on wireless.", stacked: true) {
                         ChipPicker(options: [DeviceSettings.ReportRate.hz125, .hz250, .hz500, .hz1000], selection: s.reportRate ?? .hz1000,
-                                   label: { "\($0.hertz)" }) { r in Task { await service.setReportRate(r) } }
+                                   label: { "\($0.hertz) Hz" }) { r in Task { await service.setReportRate(r) } }
                     }
                     toggle(s, .quickProfileSwitch, "Fast Swap Config", "Fn + A, B, X or Y switches between the four profiles.")
                     toggle(s, .xboxHomeButton, "Home acts as Xbox button", "Sends the Xbox Guide button when you press Home.")
