@@ -43,10 +43,25 @@ struct SettingsSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    private var xboxDetail: String {
+        switch service.padStatus {
+        case .on: "On: games see a standard Xbox controller with the controller's own remaps, gyro-to-stick and macros, at about 1000 Hz, like on Windows. It stays on from the menu bar while the window is closed."
+        case .blocked: "macOS didn't allow it on this Mac."
+        default: "Games see a standard Xbox controller over the cable, with the controller's own remaps, gyro-to-stick and macros, like on Windows."
+        }
+    }
+
     @ViewBuilder private var controller: some View {
         Card(title: "Controller") {
             VStack(spacing: 14) {
-                if service.fullControllerEnabled != nil {
+                SettingRow(title: "Xbox controller for games", detail: xboxDetail) {
+                    GlowToggle(isOn: Binding(get: { service.xboxForGames }, set: { service.setXboxForGames($0) }))
+                }
+                if service.padStatus == .blocked {
+                    Note("macOS only lets Apple-signed apps make a virtual controller. On this Mac it needs AMFI relaxed: run sudo nvram boot-args=\"amfi_get_out_of_my_way=1\" in Terminal and restart. This loosens code-signing checks for the whole Mac.")
+                        .textSelection(.enabled)
+                }
+                if service.fullControllerEnabled != nil, !service.padActive {
                     SettingRow(title: "Full controller", detail: "Steam and SDL games read the controller directly: back paddles, gyro, 1000 Hz. They use their own settings then, so the controller's remaps, gyro-to-stick and macros apply only over Bluetooth or in Switch mode.") {
                         GlowToggle(isOn: Binding(get: { service.fullControllerEnabled ?? false }, set: { on in
                             busy = true

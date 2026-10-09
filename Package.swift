@@ -15,6 +15,14 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
             ]
         ),
+        // Holds the virtual Xbox controller games see. Separate because it needs an entitlement
+        // macOS only honours for signed apps (or with AMFI relaxed), and Apex Station must open
+        // everywhere.
+        .executableTarget(
+            name: "ApexPad",
+            dependencies: ["ApexKit"],
+            linkerSettings: [.linkedFramework("CoreHID")]
+        ),
         .testTarget(name: "ApexKitTests", dependencies: ["ApexKit"], resources: [.copy("Fixtures")]),
     ]
 )

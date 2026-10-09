@@ -17,6 +17,7 @@ const binDir = (await $`swift build -c release --package-path ${root} ${arch} --
 await $`rm -rf ${app}`;
 await $`mkdir -p ${app}/Contents/MacOS ${app}/Contents/Resources`;
 await $`cp ${binDir}/ApexStation ${app}/Contents/MacOS/ApexStation`;
+await $`cp ${binDir}/ApexPad ${app}/Contents/MacOS/ApexPad`;
 if (await Bun.file(`${root}/Resources/AppIcon.icns`).exists()) {
   await $`cp ${root}/Resources/AppIcon.icns ${app}/Contents/Resources/AppIcon.icns`;
 }
@@ -39,7 +40,10 @@ await Bun.write(`${app}/Contents/Info.plist`, `<?xml version="1.0" encoding="UTF
 `);
 
 // Ad-hoc signed: Apple Silicon only runs signed code, and the app needs no Apple account or
-// entitlements, so it runs on any Mac once Gatekeeper is told to allow it.
+// entitlements, so it runs on any Mac once Gatekeeper is told to allow it. The ApexPad helper
+// asks for the virtual-HID entitlement, which macOS honours for ad-hoc code only with AMFI
+// relaxed; elsewhere the helper is stopped and the app carries on without it.
+await $`codesign --force --sign - --options runtime --entitlements ${root}/Resources/ApexPad.entitlements ${app}/Contents/MacOS/ApexPad`.quiet();
 await $`codesign --force --sign - --options runtime ${app}`.quiet();
 console.log(`built ${app} (${version})`);
 

@@ -19,6 +19,8 @@ final class XInputPipe: @unchecked Sendable {
     private var started = false
     /// The pipe being read, so letting go can abort the blocking read.
     private var current: IOUSBHostPipe?
+    /// Where rumble goes while the interface is open.
+    private var output: (pipe: IOUSBHostPipe, buffer: NSMutableData)?
 
     init() {
         (eventStream, events) = AsyncStream.makeStream(of: Bool.self, bufferingPolicy: .bufferingNewest(8))
@@ -47,10 +49,10 @@ final class XInputPipe: @unchecked Sendable {
                 Thread.sleep(forTimeInterval: 1)
                 continue
             }
-            lock.withLock { current = pipe.pipe }
+            lock.withLock { current = pipe.pipe; output = pipe.out.map { ($0.0, $0.1) } }
             events.yield(true)
             read(pipe.pipe, buffer: pipe.buffer)
-            lock.withLock { current = nil }
+            lock.withLock { current = nil; output = nil }
             pipe.interface.destroy()
             events.yield(false)
         }
@@ -68,7 +70,7 @@ final class XInputPipe: @unchecked Sendable {
         return service != 0
     }
 
-    private func open() -> (interface: IOUSBHostInterface, pipe: IOUSBHostPipe, buffer: NSMutableData)? {
+    private func open() -> (interface: IOUSBHostInterface, pipe: IOUSBHostPipe, buffer: NSMutableData, out: (IOUSBHostPipe, NSMutableData)?)? {
         let service = findInterface()
         guard service != 0 else { return nil }
         defer { IOObjectRelease(service) }
@@ -79,7 +81,9 @@ final class XInputPipe: @unchecked Sendable {
             return nil
         }
         Log.usb.notice("xinput interface open")
-        return (interface, pipe, buffer)
+        var out: (IOUSBHostPipe, NSMutableData)?
+        if let o = try? interface.copyPipe(withAddress: 0x02), let b = try? interface.ioData(withCapacity: 8) { out = (o, b) }
+        return (interface, pipe, buffer, out)
     }
 
     /// Reads until the interface goes away or isn't wanted any more.
@@ -107,4 +111,29 @@ final class XInputPipe: @unchecked Sendable {
     }
 
     var isOpen: Bool { lock.withLock { current != nil } }
+
+    private var rumbleGeneration = 0
+
+    /// Rumble from a game: on now, and off after its duration unless another request came.
+    func rumble(_ r: XboxWirelessReport.Rumble) {
+        let generation = lock.withLock { rumbleGeneration += 1; return rumbleGeneration }
+        rumble(strong: r.strong, weak: r.weak)
+        guard let duration = r.duration, r.strong > 0 || r.weak > 0 else { return }
+        let ms = Int(duration.components.seconds * 1000) + Int(duration.components.attoseconds / 1_000_000_000_000_000)
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(ms)) { [self] in
+            if lock.withLock({ rumbleGeneration == generation }) { rumble(strong: 0, weak: 0) }
+        }
+    }
+
+    /// Sets the motors as an Xbox 360 game does on Windows (strong = left, weak = right, 0-255).
+    func rumble(strong: UInt8, weak: UInt8) {
+        lock.withLock {
+            guard let output else { return }
+            let packet: [UInt8] = [0x00, 0x08, 0x00, strong, weak, 0x00, 0x00, 0x00]
+            output.buffer.length = 0
+            output.buffer.append(packet, length: packet.count)
+            var sent = 0
+            try? output.pipe.__sendIORequest(with: output.buffer, bytesTransferred: &sent, completionTimeout: 0.1)
+        }
+    }
 }

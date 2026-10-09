@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Publish the virtual Xbox controller (CoreHID HIDVirtualDevice). Apple only grants this to
+         signed apps, so an ad-hoc build gets it only while AMFI is relaxed. That's why it lives in
+         this helper and not in Apex Station, which has to open on every Mac. -->
+    <key>com.apple.developer.hid.virtual.device</key>
+    <true/>
+</dict>
+</plist>

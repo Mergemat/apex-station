@@ -42,19 +42,25 @@ Click any part of the controller to change it.
 
 ## Playing games on a Mac
 
-Turn on **Full controller** in the app's settings once. After that, Steam and any game built on
-SDL see a real "Flydigi Apex 5", with back paddles, gyro, rumble and about 1000 Hz polling over
-the cable. The setting is stored on the controller.
+With the controller on the cable in PC mode, Apex Station gives games a standard **Xbox
+Wireless Controller** (Settings → Xbox controller for games). Every game sees it: ones built on
+Apple's Game Controller framework, Unity, SDL and Steam. It carries what the controller sends a
+Windows PC: its own remaps, gyro-to-stick, macros and turbo, at about 1000 Hz, with rumble. It
+keeps going from the menu bar with the window closed; turn on Open at login to have it always.
 
-Those games take the controller over and read it raw, so its own remaps, gyro-to-stick, macros
-and turbo don't apply there (Space Station warns about the same on Windows). Set those up in
-Steam Input instead. The controller's own settings apply over **PC Bluetooth**, where it's a
-standard Xbox controller, and in Switch mode. Apex Station holds the controller only while you
-test inputs, edit a stick, record, or use keyboard and mouse.
+While it's on, the app hides the controller's own "Flydigi Apex 5" from Steam and SDL, so games
+don't see it twice, and shows it to them again when the app quits.
 
-Games that use Apple's Game Controller framework don't recognise the Apex 5's PC mode. For those,
-switch the controller to **Switch → Wired** mode. macOS sees it as a Pro Controller, at about
-100 Hz.
+macOS only lets Apple-signed apps create a virtual controller, and Apex Station isn't signed by
+Apple. The part that does it is a small helper inside the app, so the app itself opens on any
+Mac; the helper works on Macs with System Integrity Protection off or with AMFI relaxed
+(`sudo nvram boot-args="amfi_get_out_of_my_way=1"` and restart). Both loosen security for the
+whole Mac. Without it, Settings says so, and these still work:
+
+- **Full controller:** Steam and games built on SDL 3.4 or later read the "Flydigi Apex 5"
+  directly, with back paddles and gyro, but without the controller's own remaps.
+- **PC Bluetooth** mode: macOS sees a standard Xbox controller (with Bluetooth latency).
+- **Switch → Wired** mode: macOS sees a Pro Controller, at about 100 Hz.
 
 ## Install
 

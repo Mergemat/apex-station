@@ -90,6 +90,11 @@ final class SettingsChannel: @unchecked Sendable {
         cont?.resume(with: result)
     }
 
+    /// Sends a command right away and waits for it to go out, for when the app is quitting.
+    func sendAndWait(_ frame: Data) {
+        _ = sendQueue.sync { sendNow(frame) }
+    }
+
     /// Sends a command that has no reply.
     func send(_ frame: Data) async throws {
         let error: Error? = await withCheckedContinuation { cont in
@@ -198,6 +203,12 @@ final class LiveInput: @unchecked Sendable {
     /// Every change in which buttons are down, timed as it arrived, for the input log.
     private var digital: UInt32 = 0
     private var changes: [(at: UInt64, digital: UInt32)] = []
+    /// Gets every report as it arrives (the virtual Xbox controller), on the reading thread.
+    private var forward: (@Sendable (GamepadState) -> Void)?
+
+    func forward(to sink: (@Sendable (GamepadState) -> Void)?) {
+        lock.withLock { forward = sink }
+    }
 
     /// Bit for "trigger pulled past halfway", above the `GamepadButtons` bits.
     static let leftTriggerBit: UInt32 = 1 << 30, rightTriggerBit: UInt32 = 1 << 31
@@ -208,7 +219,12 @@ final class LiveInput: @unchecked Sendable {
 
     func update(_ s: GamepadState) {
         let now = DispatchTime.now().uptimeNanoseconds
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        let sink = forward
+        defer {
+            lock.unlock()
+            sink?(s)
+        }
         state = s
         count += 1
         let d = Self.digital(s)

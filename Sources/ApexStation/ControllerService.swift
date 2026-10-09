@@ -1,4 +1,5 @@
 import ApexKit
+import AppKit
 import Foundation
 import Observation
 
@@ -63,6 +64,10 @@ final class ControllerService {
     @ObservationIgnored private let channel = SettingsChannel()
     @ObservationIgnored private let pad = BluetoothPad()
     @ObservationIgnored private let xinput = XInputPipe()
+    @ObservationIgnored private let virtualPad = VirtualPad()
+    @ObservationIgnored private var windowShown = false
+    /// The app switched the third-party flag off for the Xbox controller, and owes it back.
+    @ObservationIgnored private var flagOffForPad = false
     @ObservationIgnored private var liveViewers = 0
     @ObservationIgnored private var keepAlive: Task<Void, Never>?
     @ObservationIgnored private var profileWatch: Task<Void, Never>?
@@ -78,6 +83,67 @@ final class ControllerService {
         Task { await watchXInput() }
         Task { await refreshUI() }
         Task { await watchScreenChip() }
+        startVirtualPad()
+    }
+
+    // MARK: - Xbox controller for games
+
+    /// Whether games get a standard Xbox controller fed by the Apex 5 on the cable (the ApexPad
+    /// helper). It carries what the cable's Xbox interface carries, the same as games get on
+    /// Windows: the controller's own remaps, gyro-to-stick, macros and turbo, at ~1000 Hz.
+    private(set) var xboxForGames = UserDefaults.standard.object(forKey: "xboxForGames") as? Bool ?? true
+    private(set) var padStatus: VirtualPad.Status = .off
+    var padActive: Bool { padStatus == .on }
+
+    func setXboxForGames(_ on: Bool) {
+        xboxForGames = on
+        UserDefaults.standard.set(on, forKey: "xboxForGames")
+        updatePad()
+    }
+
+    private func startVirtualPad() {
+        let pad = virtualPad, xinput = xinput
+        // Every report, as it arrives: the Xbox interface normally, the raw stream while the
+        // app has taken the controller over (the Xbox interface is quiet then).
+        xinput.live.forward { pad.send($0) }
+        channel.live.forward { pad.send($0) }
+        pad.onRumble = { xinput.rumble($0) }
+        pad.onStatus = { [weak self] status in Task { @MainActor in self?.padStatusChanged(status) } }
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { [channel] _ in
+            pad.stop()
+            // Steam and SDL games read the controller directly again once the app is gone.
+            if UserDefaults.standard.bool(forKey: "flagOffForPad") { channel.sendAndWait(Flydigi.setDataStreams(thirdPartyControl: true)) }
+        }
+    }
+
+    /// The helper runs while the Apex 5 is on the cable and the setting is on.
+    private func updatePad() {
+        let want = xboxForGames && connected && info != nil && info?.connection != .wireless
+        if want { virtualPad.start() } else { virtualPad.stop() }
+        xinput.setWanted(windowShown || want)
+    }
+
+    private func padStatusChanged(_ status: VirtualPad.Status) {
+        padStatus = status
+        Log.usb.notice("xbox controller for games: \(String(describing: status), privacy: .public)")
+        Task {
+            // So games don't see the Apex 5 twice, Steam and SDL stop seeing it directly while
+            // the Xbox controller is up (unless the app is holding it right now).
+            if status == .on, !held { await setThirdParty(false) }
+            if status != .on, status != .starting { await setThirdParty(true) }
+        }
+    }
+
+    /// Sets the controller's third-party flag on the Xbox controller's behalf, remembering to put
+    /// it back.
+    private func setThirdParty(_ on: Bool) async {
+        guard connected else { return }
+        if on, !flagOffForPad { return }
+        if !on, fullControllerEnabled == false { return }
+        _ = try? await channel.request(Flydigi.setDataStreams(thirdPartyControl: on))
+        flagOffForPad = !on
+        UserDefaults.standard.set(flagOffForPad, forKey: "flagOffForPad")
+        await loadStatus()
     }
 
     /// What to tell the user when something can't be changed right now.
@@ -200,7 +266,7 @@ final class ControllerService {
 
     /// Whether the app can read the controller's input when it needs to: over the cable with
     /// Full controller on, or over Bluetooth.
-    var canRead: Bool { connected ? fullControllerEnabled == true : bluetooth }
+    var canRead: Bool { connected ? fullControllerEnabled == true || padActive : bluetooth }
 
     /// Where input comes from: the cable's stream, or Bluetooth.
     private var inputSource: LiveInput { connected || !bluetooth ? channel.live : pad.live }
@@ -544,7 +610,10 @@ final class ControllerService {
 
     /// The main window shows the controller: read the cable's Xbox interface so the drawing is
     /// live without a takeover. Closed, it's let go so Steam can use it.
-    func showingController(_ on: Bool) { xinput.setWanted(on) }
+    func showingController(_ on: Bool) {
+        windowShown = on
+        updatePad()
+    }
 
     private func watchXInput() async {
         for await open in xinput.eventStream {
@@ -555,8 +624,13 @@ final class ControllerService {
 
     private func beginLive() {
         if !connected, bluetooth { return }
-        guard keepAlive == nil, connected, fullControllerEnabled == true else { return }
+        guard keepAlive == nil, connected, fullControllerEnabled == true || padActive else { return }
         keepAlive = Task {
+            // Taking over needs the third-party flag, which is off while the Xbox controller is up.
+            if fullControllerEnabled != true {
+                _ = try? await channel.request(Flydigi.setDataStreams(thirdPartyControl: true))
+                await loadStatus()
+            }
             while !Task.isCancelled {
                 if uploadingScreen {
                     try? await Task.sleep(for: .seconds(1))
@@ -577,7 +651,13 @@ final class ControllerService {
         guard connected, held else { return }
         held = false
         if !live { state = GamepadState() }
-        Task { try? await channel.send(Flydigi.acquire(false)) }
+        Task {
+            try? await channel.send(Flydigi.acquire(false))
+            if padActive {
+                _ = try? await channel.request(Flydigi.setDataStreams(thirdPartyControl: false))
+                await loadStatus()
+            }
+        }
     }
 
     /// The controller can switch profiles itself (Fn + a face button), so keep up. Reading the
@@ -602,6 +682,8 @@ final class ControllerService {
                 await loadStatus()
                 await loadSettings()
                 await loadProfiles()
+                if UserDefaults.standard.bool(forKey: "flagOffForPad") { flagOffForPad = true }
+                updatePad()
                 if liveViewers > 0 { beginLive() }
                 profileWatch?.cancel()
                 profileWatch = Task { await watchActiveProfile() }
@@ -617,6 +699,7 @@ final class ControllerService {
                 keepAlive = nil
                 held = false
                 state = GamepadState()
+                updatePad()
             }
         }
     }
