@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ControllerPage: View {
     @Environment(ControllerService.self) private var service
-    @ViewState private var side: ControllerDrawing.Side = .front
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
@@ -26,8 +25,7 @@ struct ControllerPage: View {
         ZStack(alignment: .topLeading) {
             RadialGradient(colors: [Theme.accent.opacity(service.live ? 0.28 : 0.10), .clear],
                            center: .center, startRadius: 20, endRadius: 380)
-            ControllerDrawing(state: service.state, live: service.live, side: side)
-                .rotation3DEffect(.degrees(side == .front ? 0 : 360), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+            ControllerDrawing(state: service.state, live: service.live)
                 .padding(.horizontal, 24)
                 .padding(.top, 44)
                 .padding(.bottom, 12)
@@ -38,12 +36,6 @@ struct ControllerPage: View {
                 Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Theme.label)
             }
             .padding(24)
-            ChipPicker(options: [ControllerDrawing.Side.front, .back], selection: side,
-                       label: { $0 == .front ? "Front" : "Back" }) { s in
-                withAnimation(.spring(duration: 0.6)) { side = s }
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .topTrailing)
             if !service.connected {
                 Label("Plug in your Apex 5 with the USB-C cable", systemImage: "cable.connector")
                     .font(.callout)
