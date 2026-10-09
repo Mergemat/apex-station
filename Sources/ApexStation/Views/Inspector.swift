@@ -186,7 +186,6 @@ private struct StickPanel: View {
         let position = left ? service.state.leftStick : service.state.rightStick
         StickPlot(position: position, live: service.live,
                   deadZone: CGFloat(max(config?.deadZone ?? 0, 0)) / 100, edge: CGFloat(100 - max(config?.edge ?? 0, 0)) / 100)
-            .frame(height: 200)
         if let config { StickShape(config: config, left: left, position: position, live: service.live) }
         if let profile = service.editingProfile {
             let key: FlydigiKey = left ? .l3 : .r3
@@ -421,49 +420,100 @@ struct CurveEditor: View {
 }
 
 /// A live plot of one stick with a fading trail, so circling it shows its range. The dead zone
-/// and full-output edge are drawn as rings.
+/// and full-output edge are drawn as rings. The circularity test (like Space Station's) records
+/// how far the stick reaches in every direction while you spin it along the rim.
 private struct StickPlot: View {
     let position: StickPosition
     let live: Bool
     var deadZone: CGFloat = 0
     var edge: CGFloat = 1
     @ViewState private var trail: [CGPoint] = []
+    /// Furthest reach in each 5° direction during the test; nil when not testing.
+    @ViewState private var reach: [Double]?
+
+    private static let bins = 72
 
     var body: some View {
-        Canvas { ctx, size in
-            let r = min(size.width, size.height) / 2 - 6
-            let c = CGPoint(x: size.width / 2, y: size.height / 2)
-            let rim = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-            ctx.fill(rim, with: .color(.black.opacity(0.25)))
-            ctx.stroke(rim, with: .color(Theme.stroke), lineWidth: 1)
-            var cross = Path()
-            cross.move(to: CGPoint(x: c.x - r, y: c.y)); cross.addLine(to: CGPoint(x: c.x + r, y: c.y))
-            cross.move(to: CGPoint(x: c.x, y: c.y - r)); cross.addLine(to: CGPoint(x: c.x, y: c.y + r))
-            ctx.stroke(cross, with: .color(Theme.stroke), lineWidth: 0.5)
-            if deadZone > 0 {
-                let d = r * deadZone
-                ctx.fill(Path(ellipseIn: CGRect(x: c.x - d, y: c.y - d, width: d * 2, height: d * 2)), with: .color(Theme.accent.opacity(0.18)))
+        VStack(alignment: .leading, spacing: 8) {
+            Canvas { ctx, size in draw(&ctx, size) }
+                .frame(height: 200)
+            HStack(spacing: 10) {
+                Button {
+                    reach = reach == nil ? Array(repeating: 0, count: Self.bins) : nil
+                } label: {
+                    Label(reach == nil ? "Test circularity" : "Stop test", systemImage: reach == nil ? "circle.dashed" : "stop.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .glass(.capsule, interactive: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(!live)
+                Text(testReadout).font(.system(size: 11.5)).foregroundStyle(Theme.label).monospacedDigit()
             }
-            if edge < 1 {
-                let e = r * edge
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - e, y: c.y - e, width: e * 2, height: e * 2)),
-                           with: .color(Theme.accent.opacity(0.6)), style: .init(lineWidth: 1, dash: [4, 4]))
-            }
-            for (i, p) in trail.enumerated() {
-                let a = Double(i) / Double(max(1, trail.count))
-                let q = CGPoint(x: c.x + p.x * r, y: c.y - p.y * r)
-                ctx.fill(Path(ellipseIn: CGRect(x: q.x - 1.5, y: q.y - 1.5, width: 3, height: 3)), with: .color(Theme.accent.opacity(0.15 + a * 0.5)))
-            }
-            let q = CGPoint(x: c.x + point.x * r, y: c.y - point.y * r)
-            var g = ctx
-            g.addFilter(.blur(radius: 6))
-            g.fill(Path(ellipseIn: CGRect(x: q.x - 9, y: q.y - 9, width: 18, height: 18)), with: .color(Theme.glow.opacity(live ? 0.8 : 0)))
-            ctx.fill(Path(ellipseIn: CGRect(x: q.x - 6, y: q.y - 6, width: 12, height: 12)), with: .color(live ? Theme.glow : Theme.idle))
         }
         .onChange(of: position) { _, _ in
             trail.append(point)
             if trail.count > 240 { trail.removeFirst(trail.count - 240) }
+            record()
         }
+    }
+
+    private var testReadout: String {
+        guard let reach else { return live ? "" : "Needs live input." }
+        let seen = reach.filter { $0 > 0.5 }
+        guard seen.count >= Self.bins / 2 else { return "Spin the stick slowly along the rim." }
+        let error = seen.map { abs($0 - 1) }.reduce(0, +) / Double(seen.count) * 100
+        let offset = hypot(point.x, point.y) * 100
+        return String(format: "Avg error %.1f%% · %d%% covered · resting %.1f%% off centre", error, seen.count * 100 / Self.bins, offset)
+    }
+
+    private func record() {
+        guard var r = reach else { return }
+        let p = point, d = hypot(p.x, p.y)
+        guard d > 0.5 else { return }
+        let bin = Int(((atan2(p.y, p.x) + .pi) / (2 * .pi) * Double(Self.bins)).rounded(.down)) % Self.bins
+        if d > r[bin] { r[bin] = d; reach = r }
+    }
+
+    private func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        let r = min(size.width, size.height) / 2 - 6
+        let c = CGPoint(x: size.width / 2, y: size.height / 2)
+        let rim = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+        ctx.fill(rim, with: .color(.black.opacity(0.25)))
+        ctx.stroke(rim, with: .color(Theme.stroke), lineWidth: 1)
+        var cross = Path()
+        cross.move(to: CGPoint(x: c.x - r, y: c.y)); cross.addLine(to: CGPoint(x: c.x + r, y: c.y))
+        cross.move(to: CGPoint(x: c.x, y: c.y - r)); cross.addLine(to: CGPoint(x: c.x, y: c.y + r))
+        ctx.stroke(cross, with: .color(Theme.stroke), lineWidth: 0.5)
+        if deadZone > 0 {
+            let d = r * deadZone
+            ctx.fill(Path(ellipseIn: CGRect(x: c.x - d, y: c.y - d, width: d * 2, height: d * 2)), with: .color(Theme.accent.opacity(0.18)))
+        }
+        if edge < 1 {
+            let e = r * edge
+            ctx.stroke(Path(ellipseIn: CGRect(x: c.x - e, y: c.y - e, width: e * 2, height: e * 2)),
+                       with: .color(Theme.accent.opacity(0.6)), style: .init(lineWidth: 1, dash: [4, 4]))
+        }
+        if let reach {
+            // The outline the stick actually reached, against the rim.
+            var shape = Path()
+            for (i, d) in reach.enumerated() where d > 0.5 {
+                let a = (Double(i) + 0.5) / Double(Self.bins) * 2 * .pi - .pi
+                let q = CGPoint(x: c.x + cos(a) * d * r, y: c.y - sin(a) * d * r)
+                shape.isEmpty ? shape.move(to: q) : shape.addLine(to: q)
+            }
+            ctx.stroke(shape, with: .color(Theme.glow), style: .init(lineWidth: 1.5, lineJoin: .round))
+        }
+        for (i, p) in trail.enumerated() {
+            let a = Double(i) / Double(max(1, trail.count))
+            let q = CGPoint(x: c.x + p.x * r, y: c.y - p.y * r)
+            ctx.fill(Path(ellipseIn: CGRect(x: q.x - 1.5, y: q.y - 1.5, width: 3, height: 3)), with: .color(Theme.accent.opacity(0.15 + a * 0.5)))
+        }
+        let q = CGPoint(x: c.x + point.x * r, y: c.y - point.y * r)
+        var g = ctx
+        g.addFilter(.blur(radius: 6))
+        g.fill(Path(ellipseIn: CGRect(x: q.x - 9, y: q.y - 9, width: 18, height: 18)), with: .color(Theme.glow.opacity(live ? 0.8 : 0)))
+        ctx.fill(Path(ellipseIn: CGRect(x: q.x - 6, y: q.y - 6, width: 12, height: 12)), with: .color(live ? Theme.glow : Theme.idle))
     }
 
     private var point: CGPoint { CGPoint(x: Double(position.x) / 32767, y: Double(position.y) / 32767) }
