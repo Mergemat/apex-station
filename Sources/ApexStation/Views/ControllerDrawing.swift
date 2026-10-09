@@ -6,6 +6,10 @@ import SwiftUI
 struct ControllerDrawing: View {
     let state: GamepadState
     let live: Bool
+    /// When set, remapped buttons get a small "→ target" tag.
+    var profile: Profile? = nil
+    var selected: ControllerControl? = nil
+    var hovered: ControllerControl? = nil
 
     private static let space = CGSize(width: 500, height: 520)
     /// The outline is 500 wide and starts below the shoulder row.
@@ -24,16 +28,26 @@ struct ControllerDrawing: View {
     }
 
     private var b: GamepadButtons { live ? state.buttons : [] }
+    private typealias L = ControllerLayout
+
+    /// Maps a point in the view to the control under it.
+    static func control(at point: CGPoint, in size: CGSize) -> ControllerControl? {
+        let s = min(size.width / space.width, size.height / space.height)
+        let p = CGPoint(x: (point.x - (size.width - space.width * s) / 2) / s, y: (point.y - (size.height - space.height * s) / 2) / s)
+        // Small controls first, so the d-pad wins over the shell behind it.
+        return ControllerLayout.regions.sorted { $0.value.boundingRect.width * $0.value.boundingRect.height < $1.value.boundingRect.width * $1.value.boundingRect.height }
+            .first { $0.value.contains(p) || $0.value.strokedPath(.init(lineWidth: 6)).contains(p) }?.key
+    }
 
     /// Unit coordinates on the outline (x and y divided by its width) → drawing space.
     private func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint { CGPoint(x: u * 500, y: Self.bodyTop + v * 500) }
 
     private func draw(_ ctx: inout GraphicsContext) {
         // Shoulder row above the body: triggers fill with how far they're pulled.
-        trigger(&ctx, CGRect(x: 58, y: 18, width: 104, height: 26), "LT", live ? state.leftTrigger : 0)
-        trigger(&ctx, CGRect(x: 338, y: 18, width: 104, height: 26), "RT", live ? state.rightTrigger : 0)
-        key(&ctx, .capsule(CGRect(x: 172, y: 18, width: 46, height: 26)), "LM", b.contains(.leftMacro))
-        key(&ctx, .capsule(CGRect(x: 282, y: 18, width: 46, height: 26)), "RM", b.contains(.rightMacro))
+        trigger(&ctx, L.lt, "LT", live ? state.leftTrigger : 0)
+        trigger(&ctx, L.rt, "RT", live ? state.rightTrigger : 0)
+        key(&ctx, .capsule(L.lm), "LM", b.contains(.leftMacro))
+        key(&ctx, .capsule(L.rm), "RM", b.contains(.rightMacro))
 
         let shell = ApexOutline.path(width: 500, origin: CGPoint(x: 0, y: Self.bodyTop))
         drawShell(&ctx, shell)
@@ -42,25 +56,66 @@ struct ControllerDrawing: View {
         faceplate(&ctx)
         lightBar(&ctx)
 
-        stick(&ctx, at(0.2373, 0.1793), live ? state.leftStick : .init(), "L3", b.contains(.leftStick))
-        stick(&ctx, at(0.6226, 0.3532), live ? state.rightStick : .init(), "R3", b.contains(.rightStick))
-        dpad(&ctx, at(0.3649, 0.3492))
-        key(&ctx, .circle(at(0.7619, 0.2514), 16), "A", b.contains(.a))
-        key(&ctx, .circle(at(0.8277, 0.1887), 16), "B", b.contains(.b))
-        key(&ctx, .circle(at(0.6922, 0.1879), 16), "X", b.contains(.x))
-        key(&ctx, .circle(at(0.7588, 0.1214), 16), "Y", b.contains(.y))
-        smallKey(&ctx, at(0.3720, 0.0799), degrees: 50, icon: "rectangle.on.rectangle", on: b.contains(.back))
-        smallKey(&ctx, at(0.6226, 0.0799), degrees: -50, icon: "line.3.horizontal", on: b.contains(.start))
-        home(&ctx, at(0.4965, 0.0673), on: b.contains(.guide))
+        stick(&ctx, L.leftStick, live ? state.leftStick : .init(), "L3", b.contains(.leftStick))
+        stick(&ctx, L.rightStick, live ? state.rightStick : .init(), "R3", b.contains(.rightStick))
+        dpad(&ctx, L.dpad)
+        key(&ctx, .circle(L.a, L.faceRadius), "A", b.contains(.a))
+        key(&ctx, .circle(L.b, L.faceRadius), "B", b.contains(.b))
+        key(&ctx, .circle(L.x, L.faceRadius), "X", b.contains(.x))
+        key(&ctx, .circle(L.y, L.faceRadius), "Y", b.contains(.y))
+        smallKey(&ctx, L.view, degrees: 50, icon: "rectangle.on.rectangle", on: b.contains(.back))
+        smallKey(&ctx, L.menu, degrees: -50, icon: "line.3.horizontal", on: b.contains(.start))
+        home(&ctx, L.home, on: b.contains(.guide))
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
         caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
-        key(&ctx, .capsule(CGRect(x: 40, y: 446, width: 100, height: 26)), "M2", b.contains(.m2))
-        key(&ctx, .capsule(CGRect(x: 40, y: 480, width: 100, height: 26)), "M4", b.contains(.m4))
-        key(&ctx, .capsule(CGRect(x: 360, y: 446, width: 100, height: 26)), "M1", b.contains(.m1))
-        key(&ctx, .capsule(CGRect(x: 360, y: 480, width: 100, height: 26)), "M3", b.contains(.m3))
-        key(&ctx, .capsule(CGRect(x: 196, y: 476, width: 50, height: 22)), "TURBO", b.contains(.turbo), small: true)
-        key(&ctx, .capsule(CGRect(x: 254, y: 476, width: 50, height: 22)), "FN", b.contains(.fn), small: true)
+        key(&ctx, .capsule(L.m2), "M2", b.contains(.m2))
+        key(&ctx, .capsule(L.m4), "M4", b.contains(.m4))
+        key(&ctx, .capsule(L.m1), "M1", b.contains(.m1))
+        key(&ctx, .capsule(L.m3), "M3", b.contains(.m3))
+        key(&ctx, .capsule(L.turbo), "TURBO", b.contains(.turbo), small: true)
+        key(&ctx, .capsule(L.fn), "FN", b.contains(.fn), small: true)
+
+        overlays(&ctx)
+    }
+
+    // MARK: - Interaction overlays
+
+    /// Hover and selection rings, and "→ target" tags on remapped buttons.
+    private func overlays(_ ctx: inout GraphicsContext) {
+        let regions = L.regions
+        if let hovered, hovered != selected, let p = regions[hovered] {
+            ctx.stroke(p, with: .color(.white.opacity(0.55)), lineWidth: 1.6)
+        }
+        if let selected, let p = regions[selected] {
+            var g = ctx
+            g.addFilter(.blur(radius: 6))
+            g.stroke(p, with: .color(Theme.glow), lineWidth: 5)
+            ctx.stroke(p, with: .color(.white), lineWidth: 2)
+        }
+        guard let profile else { return }
+        for (key, mapping) in profile.remapped {
+            guard let p = regions[ControllerControl(key)] else { continue }
+            let text: String = switch mapping {
+            case .button(let k): "→ " + k.name
+            case .macro: "MACRO"
+            case .keyboardOrMouse: "KEY"
+            default: "•"
+            }
+            tag(&ctx, text, near: p.boundingRect)
+        }
+    }
+
+    /// A small pill just outside a control's top-right corner.
+    private func tag(_ ctx: inout GraphicsContext, _ text: String, near r: CGRect) {
+        let width = CGFloat(text.count) * 6 + 12
+        let pill = CGRect(x: r.maxX - width / 2, y: r.minY - 11, width: width, height: 15)
+        let shape = Path(roundedRect: pill, cornerRadius: 7.5)
+        var g = ctx
+        g.addFilter(.blur(radius: 5))
+        g.fill(shape, with: .color(Theme.accent.opacity(0.6)))
+        ctx.fill(shape, with: .color(Theme.accent))
+        label(&ctx, text, at: CGPoint(x: pill.midX, y: pill.midY), size: 8, color: .white)
     }
 
     // MARK: - Body
@@ -109,6 +164,10 @@ struct ControllerDrawing: View {
         .filter { $0.x >= 0.165 && $0.x <= 0.275 && $0.y < 0.08 }
         .sorted { $0.x < $1.x }
         .map { CGPoint(x: $0.x * 500, y: bodyTop + $0.y * 500) }
+
+    static func bumperRegion(left: Bool) -> Path {
+        bumperShape(left: left, shell: ApexOutline.path(width: 500, origin: CGPoint(x: 0, y: bodyTop)))
+    }
 
     private static func bumperShape(left: Bool, shell: Path) -> Path {
         var spine = Path()
@@ -243,18 +302,15 @@ struct ControllerDrawing: View {
 
     /// Four separate arrow keys, so each direction reads on its own.
     private func dpad(_ ctx: inout GraphicsContext, _ c: CGPoint) {
-        let size: CGFloat = 24, gap: CGFloat = 14
-        let keys: [(GamepadButtons, CGPoint, String)] = [
-            (.dpadUp, CGPoint(x: c.x, y: c.y - gap - size / 2), "chevron.up"),
-            (.dpadDown, CGPoint(x: c.x, y: c.y + gap + size / 2), "chevron.down"),
-            (.dpadLeft, CGPoint(x: c.x - gap - size / 2, y: c.y), "chevron.left"),
-            (.dpadRight, CGPoint(x: c.x + gap + size / 2, y: c.y), "chevron.right"),
+        let keys: [(FlydigiKey, GamepadButtons, String)] = [
+            (.up, .dpadUp, "chevron.up"), (.down, .dpadDown, "chevron.down"),
+            (.left, .dpadLeft, "chevron.left"), (.right, .dpadRight, "chevron.right"),
         ]
-        for (button, p, icon) in keys {
-            let shape = path(.rounded(CGRect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size), 8))
-            fill(&ctx, shape, on: b.contains(button))
+        for (key, button, icon) in keys {
+            let r = L.dpadRect(key)
+            fill(&ctx, path(.rounded(r, 8)), on: b.contains(button))
             ctx.draw(Text(Image(systemName: icon)).font(.system(size: 9, weight: .bold))
-                .foregroundStyle(b.contains(button) ? Color.white : Color.white.opacity(0.65)), at: p)
+                .foregroundStyle(b.contains(button) ? Color.white : Color.white.opacity(0.65)), at: CGPoint(x: r.midX, y: r.midY))
         }
     }
 
@@ -322,4 +378,85 @@ private enum LabelGlyphs {
         return result
     }
 
+}
+
+/// Something on the controller the user can click to configure.
+enum ControllerControl: Hashable {
+    case key(FlydigiKey)
+    case leftStick
+    case rightStick
+
+    /// Sticks are selected as a whole; their click (L3/R3) is configured from the stick panel.
+    init(_ key: FlydigiKey) {
+        switch key {
+        case .l3: self = .leftStick
+        case .r3: self = .rightStick
+        default: self = .key(key)
+        }
+    }
+}
+
+/// Where every control sits, in the drawing's 500×520 space. The drawing and click detection
+/// both read from here so they can't disagree.
+@MainActor
+enum ControllerLayout {
+    static let bodyTop: CGFloat = 74
+    static func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint { CGPoint(x: u * 500, y: bodyTop + v * 500) }
+
+    static let lt = CGRect(x: 58, y: 18, width: 104, height: 26)
+    static let rt = CGRect(x: 338, y: 18, width: 104, height: 26)
+    static let lm = CGRect(x: 172, y: 18, width: 46, height: 26)
+    static let rm = CGRect(x: 282, y: 18, width: 46, height: 26)
+    static let leftStick = at(0.2373, 0.1793)
+    static let rightStick = at(0.6226, 0.3532)
+    static let stickRadius: CGFloat = 38
+    static let dpad = at(0.3649, 0.3492)
+    static let dpadKey: CGFloat = 24, dpadGap: CGFloat = 14
+    static let a = at(0.7619, 0.2514), b = at(0.8277, 0.1887), x = at(0.6922, 0.1879), y = at(0.7588, 0.1214)
+    static let faceRadius: CGFloat = 16
+    static let view = at(0.3720, 0.0799), menu = at(0.6226, 0.0799), home = at(0.4965, 0.0673)
+    static let m2 = CGRect(x: 40, y: 446, width: 100, height: 26)
+    static let m4 = CGRect(x: 40, y: 480, width: 100, height: 26)
+    static let m1 = CGRect(x: 360, y: 446, width: 100, height: 26)
+    static let m3 = CGRect(x: 360, y: 480, width: 100, height: 26)
+    static let turbo = CGRect(x: 196, y: 476, width: 50, height: 22)
+    static let fn = CGRect(x: 254, y: 476, width: 50, height: 22)
+
+    static func dpadRect(_ k: FlydigiKey) -> CGRect {
+        let off = dpadGap + dpadKey / 2
+        let c: CGPoint = switch k {
+        case .up: CGPoint(x: dpad.x, y: dpad.y - off)
+        case .down: CGPoint(x: dpad.x, y: dpad.y + off)
+        case .left: CGPoint(x: dpad.x - off, y: dpad.y)
+        default: CGPoint(x: dpad.x + off, y: dpad.y)
+        }
+        return CGRect(x: c.x - dpadKey / 2, y: c.y - dpadKey / 2, width: dpadKey, height: dpadKey)
+    }
+
+    private static func circle(_ c: CGPoint, _ r: CGFloat) -> Path {
+        Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+    }
+
+    private static func rotatedKey(_ c: CGPoint, _ degrees: Double) -> Path {
+        Path(roundedRect: CGRect(x: -16, y: -7.5, width: 32, height: 15), cornerRadius: 7.5)
+            .applying(CGAffineTransform(rotationAngle: degrees * .pi / 180).concatenating(.init(translationX: c.x, y: c.y)))
+    }
+
+    /// Clickable shape of every control.
+    static let regions: [ControllerControl: Path] = {
+        var r: [ControllerControl: Path] = [
+            .key(.lt): Path(roundedRect: lt, cornerRadius: 13), .key(.rt): Path(roundedRect: rt, cornerRadius: 13),
+            .key(.lm): Path(roundedRect: lm, cornerRadius: 13), .key(.rm): Path(roundedRect: rm, cornerRadius: 13),
+            .leftStick: circle(leftStick, stickRadius), .rightStick: circle(rightStick, stickRadius),
+            .key(.a): circle(a, faceRadius), .key(.b): circle(b, faceRadius),
+            .key(.x): circle(x, faceRadius), .key(.y): circle(y, faceRadius),
+            .key(.view): rotatedKey(view, 50), .key(.menu): rotatedKey(menu, -50), .key(.home): circle(home, 15),
+            .key(.m1): Path(roundedRect: m1, cornerRadius: 13), .key(.m2): Path(roundedRect: m2, cornerRadius: 13),
+            .key(.m3): Path(roundedRect: m3, cornerRadius: 13), .key(.m4): Path(roundedRect: m4, cornerRadius: 13),
+            .key(.turbo): Path(roundedRect: turbo, cornerRadius: 11), .key(.fn): Path(roundedRect: fn, cornerRadius: 11),
+            .key(.lb): ControllerDrawing.bumperRegion(left: true), .key(.rb): ControllerDrawing.bumperRegion(left: false),
+        ]
+        for k in [FlydigiKey.up, .down, .left, .right] { r[.key(k)] = Path(roundedRect: dpadRect(k), cornerRadius: 8) }
+        return r
+    }()
 }

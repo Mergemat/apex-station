@@ -1,117 +1,192 @@
 import ApexKit
 import SwiftUI
 
-/// The whole window: drifting blue backdrop, a floating glass tab bar, and the current page.
+/// The whole app on one screen: the controller in the middle, click any part of it to configure
+/// that part in the panel that slides in. Profiles and device settings live in the header.
 struct RootView: View {
-    enum Page: String, CaseIterable, Identifiable {
-        case controller = "Controller"
-        case buttons = "Buttons"
-        case sticks = "Sticks"
-        case device = "Device"
-        var id: Self { self }
-        var icon: String {
-            switch self {
-            case .controller: "gamecontroller.fill"
-            case .buttons: "square.grid.2x2"
-            case .sticks: "circle.circle"
-            case .device: "slider.horizontal.3"
-            }
+    @Environment(ControllerService.self) private var service
+    /// `-select <button>` on the command line opens with a control selected (used for screenshots).
+    @ViewState private var selected: ControllerControl? = UserDefaults.standard.string(forKey: "select").flatMap { name in
+        switch name.lowercased() {
+        case "leftstick": .leftStick
+        case "rightstick": .rightStick
+        default: FlydigiKey.allCases.first { $0.name.lowercased() == name.lowercased() }.map { .key($0) }
         }
     }
-
-    /// `-startPage <name>` on the command line opens a specific tab (used for screenshots).
-    @ViewState private var page: Page = UserDefaults.standard.string(forKey: "startPage").flatMap { Page(rawValue: $0.capitalized) } ?? .controller
-    @Namespace private var tabs
+    @ViewState private var hovered: ControllerControl?
+    @ViewState private var showingSettings = false
 
     var body: some View {
         ZStack(alignment: .top) {
             AppBackground()
-            VStack(spacing: 0) {
+            VStack(spacing: 18) {
                 header
-                    .padding(.top, 14)
-                    .padding(.horizontal, 28)
-                ScrollView {
-                    Group {
-                        switch page {
-                        case .controller: ControllerPage()
-                        case .buttons: ButtonsPage()
-                        case .sticks: SticksPage()
-                        case .device: DevicePage()
-                        }
+                HStack(alignment: .top, spacing: 18) {
+                    stage
+                    if let selected {
+                        Inspector(control: selected) { self.selected = nil }
+                            .frame(width: 340)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 22)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
-                .scrollIndicators(.never)
+                .animation(.spring(duration: 0.35), value: selected)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 14)
+            .padding(.bottom, 22)
         }
         .foregroundStyle(.white)
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
-        .animation(.easeOut(duration: 0.2), value: page)
+        .sheet(isPresented: $showingSettings) { SettingsSheet() }
+        .onAppear { service.liveViewAppeared() }
+        .onDisappear { service.liveViewDisappeared() }
     }
 
+    // MARK: - Header
+
     private var header: some View {
-        HStack {
+        HStack(spacing: 14) {
             // Leaves room for the window's traffic lights.
-            Color.clear.frame(width: 64, height: 1)
+            Color.clear.frame(width: 60, height: 1)
             HStack(spacing: 8) {
                 Image(systemName: "bolt.horizontal.fill").foregroundStyle(Theme.accent)
                 Text("APEX STATION").font(.system(size: 13, weight: .heavy)).tracking(3)
             }
             Spacer()
-            tabBar
+            ProfileSwitcher()
             Spacer()
-            ConnectionBadge()
+            StatusBadge()
+            Button { showingSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .glass(.circle, interactive: true)
+            }
+            .buttonStyle(.plain)
+            .help("Controller and app settings")
         }
     }
 
-    private var tabBar: some View {
+    // MARK: - Controller stage
+
+    private var stage: some View {
+        ZStack(alignment: .bottom) {
+            RadialGradient(colors: [Theme.accent.opacity(service.live ? 0.25 : 0.08), .clear],
+                           center: .center, startRadius: 20, endRadius: 420)
+            GeometryReader { geo in
+                ControllerDrawing(state: service.state, live: service.live, profile: service.editingProfile,
+                                  selected: selected, hovered: hovered)
+                    .contentShape(.rect)
+                    .onContinuousHover { phase in
+                        if case .active(let p) = phase { hovered = ControllerDrawing.control(at: p, in: geo.size) } else { hovered = nil }
+                    }
+                    .onTapGesture(coordinateSpace: .local) { p in
+                        let hit = ControllerDrawing.control(at: p, in: geo.size)
+                        selected = hit == selected ? nil : hit
+                    }
+                    .pointerStyle(hovered == nil ? .default : .link)
+            }
+            .padding(28)
+            hint.padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(.rect(cornerRadius: 28))
+        .glass(.rect(cornerRadius: 28))
+    }
+
+    @ViewBuilder private var hint: some View {
+        let text: String? = if !service.connected {
+            "Plug in your Apex 5 with the USB-C cable"
+        } else if service.fullControllerEnabled == false {
+            "Turn on Full controller in settings to see live input"
+        } else if selected == nil {
+            "Click any button to change what it does"
+        } else {
+            nil
+        }
+        if let text {
+            Text(text)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Theme.secondary)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .glass(.capsule)
+                .transition(.opacity)
+        }
+    }
+}
+
+/// The controller's four on-board profiles. Clicking one makes it active; edits go to the active one.
+private struct ProfileSwitcher: View {
+    @Environment(ControllerService.self) private var service
+    @Namespace private var pill
+
+    var body: some View {
         HStack(spacing: 4) {
-            ForEach(Page.allCases) { p in
-                Button { page = p } label: {
-                    Label(p.rawValue, systemImage: p.icon)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(page == p ? .white : Theme.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background {
-                            if page == p {
-                                Capsule().fill(Theme.accent)
-                                    .matchedGeometryEffect(id: "tab", in: tabs)
-                                    .bloom(true, radius: 10)
-                            }
+            ForEach(0..<4, id: \.self) { slot in
+                let profile = service.profiles.first { $0.slot == slot }
+                let active = slot == service.activeProfile
+                Button { Task { await service.useProfile(slot) } } label: {
+                    HStack(spacing: 6) {
+                        Text("\(slot + 1)").font(.system(size: 13, weight: .bold, design: .rounded))
+                        if active, let profile { Text(displayName(profile)).font(.system(size: 12, weight: .medium)).lineLimit(1) }
+                    }
+                    .foregroundStyle(active ? .white : Theme.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background {
+                        if active {
+                            Capsule().fill(Theme.accent).matchedGeometryEffect(id: "active", in: pill).bloom(true, radius: 10)
                         }
-                        .contentShape(.capsule)
+                    }
+                    .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
+                .disabled(!service.connected)
+                .help(profile.map { "Profile \(slot + 1): \(displayName($0))" + ($0.remapped.isEmpty ? "" : " · \($0.remapped.count) remapped") } ?? "Profile \(slot + 1)")
             }
         }
         .padding(4)
         .glass(.capsule)
+        .animation(.spring(duration: 0.3), value: service.activeProfile)
     }
 }
 
-private struct ConnectionBadge: View {
+private struct StatusBadge: View {
     @Environment(ControllerService.self) private var service
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(service.live ? Theme.glow : service.connected ? Theme.accent : Color.white.opacity(0.25))
-                .frame(width: 7, height: 7)
-                .bloom(service.live, radius: 5)
-            Text(text).font(.system(size: 12, weight: .medium)).monospacedDigit().foregroundStyle(Theme.secondary)
+        HStack(spacing: 10) {
+            if let info = service.info {
+                Label("\(info.batteryPercent)%", systemImage: info.charging == .onBattery ? "battery.100percent" : "battery.100percent.bolt")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+            }
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(service.live ? Theme.glow : service.connected ? Theme.accent : Color.white.opacity(0.25))
+                    .frame(width: 7, height: 7)
+                    .bloom(service.live, radius: 5)
+                Text(text).font(.system(size: 12, weight: .medium)).monospacedDigit().foregroundStyle(Theme.secondary)
+            }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
         .glass(.capsule)
     }
 
     private var text: String {
+        if service.saving { return "Saving…" }
         if !service.connected { return "No controller" }
-        if service.live { return "\(service.reportRate) Hz" }
-        return "Connected"
+        return service.live ? "\(service.reportRate) Hz" : "Connected"
     }
+}
+
+/// Flydigi names new profiles "配置N" ("Config N").
+func displayName(_ p: Profile) -> String {
+    let name = p.name
+    if name.isEmpty { return "Profile \(p.slot + 1)" }
+    if name.hasPrefix("配置") { return "Config " + name.dropFirst(2) }
+    return name
 }

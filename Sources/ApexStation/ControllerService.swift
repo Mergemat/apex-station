@@ -62,6 +62,46 @@ final class ControllerService {
         }
     }
 
+    /// The profile button changes go to: the one the controller is using.
+    var editingProfile: Profile? { profiles.first { $0.slot == (activeProfile ?? 0) } }
+    /// True while a profile write is in flight.
+    private(set) var saving = false
+
+    func remap(_ key: FlydigiKey, to mapping: KeyMapping) async {
+        await edit { $0.setMapping(mapping, for: key) }
+    }
+
+    func setTurbo(_ key: FlydigiKey, _ turbo: (mode: TurboMode, speed: UInt8)?) async {
+        await edit { $0.setTurbo(turbo, for: key) }
+    }
+
+    /// Applies `change` to the active profile, writes only what changed, then reads the profile
+    /// back so the app shows what the controller actually stored.
+    private func edit(_ change: (inout Profile) -> Void) async {
+        guard let old = editingProfile, !saving else { return }
+        var new = old
+        change(&new)
+        let frames = Flydigi.writeProfile(from: old, to: new)
+        guard !frames.isEmpty else { return }
+        saving = true
+        defer { saving = false }
+        for frame in frames {
+            do { _ = try await channel.request(frame, timeout: .seconds(1)) } catch {
+                Log.settings.error("profile write failed at command \(frame[frame.startIndex + 2])")
+                break
+            }
+        }
+        await reloadProfile(old.slot)
+    }
+
+    private func reloadProfile(_ slot: Int) async {
+        let box = AssemblerBox()
+        guard (try? await channel.collect(Flydigi.readProfile(slot)) { box.add($0) }) != nil,
+              let r = box.result, let p = Profile(slot: r.slot, bytes: r.bytes) else { return }
+        profiles = profiles.map { $0.slot == slot ? p : $0 }
+        ProfileBackup.save(profiles)
+    }
+
     /// Makes `slot` the active profile, like the controller's Fast Swap.
     func useProfile(_ slot: Int) async {
         _ = try? await channel.request(Flydigi.applyProfile(slot))
