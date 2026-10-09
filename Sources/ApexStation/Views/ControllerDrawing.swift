@@ -11,13 +11,15 @@ struct ControllerDrawing: View {
     var selected: ControllerControl? = nil
     var hovered: ControllerControl? = nil
 
-    private static let space = CGSize(width: 500, height: 520)
+    /// The drawing's extent: the body's art starts at y = 74, the trigger row reaches up to -18.
+    private static let space = CGRect(x: 0, y: -24, width: 500, height: 520)
 
     var body: some View {
         Canvas { ctx, size in
             let s = min(size.width / Self.space.width, size.height / Self.space.height)
             ctx.translateBy(x: (size.width - Self.space.width * s) / 2, y: (size.height - Self.space.height * s) / 2)
             ctx.scaleBy(x: s, y: s)
+            ctx.translateBy(x: -Self.space.minX, y: -Self.space.minY)
             draw(&ctx)
         }
         .accessibilityLabel("Live view of the controller")
@@ -49,7 +51,8 @@ struct ControllerDrawing: View {
     /// Maps a point in the view to the control under it.
     static func control(at point: CGPoint, in size: CGSize) -> ControllerControl? {
         let s = min(size.width / space.width, size.height / space.height)
-        let p = CGPoint(x: (point.x - (size.width - space.width * s) / 2) / s, y: (point.y - (size.height - space.height * s) / 2) / s)
+        let p = CGPoint(x: (point.x - (size.width - space.width * s) / 2) / s + space.minX,
+                        y: (point.y - (size.height - space.height * s) / 2) / s + space.minY)
         // Small controls first, so the d-pad wins over the shell behind it.
         return ControllerLayout.regions.sorted { $0.value.boundingRect.width * $0.value.boundingRect.height < $1.value.boundingRect.width * $1.value.boundingRect.height }
             .first { $0.value.contains(p) || $0.value.strokedPath(.init(lineWidth: 6)).contains(p) }?.key
@@ -100,7 +103,7 @@ struct ControllerDrawing: View {
         label(&ctx, "RB", at: ControllerArt.rbLabel, size: 8, color: b.contains(.rightBumper) ? .white : .white.opacity(0.8))
 
         // Back: paddles under the grip they sit on, Turbo and Fn in the middle.
-        caption(&ctx, "BACK", CGPoint(x: 250, y: 452))
+        caption(&ctx, "BACK", CGPoint(x: 250, y: 426))
         for (shape, key, name, on) in [(L.m2, FlydigiKey.m2, "M2", b.contains(.m2)), (L.m4, .m4, "M4", b.contains(.m4)),
                                        (L.m1, .m1, "M1", b.contains(.m1)), (L.m3, .m3, "M3", b.contains(.m3))] {
             self.key(&ctx, shape, name, on, remap: remaps[.key(key)])
@@ -337,6 +340,10 @@ enum ControllerLayout {
 
     // The parts above and below the body, shaped like the parts themselves (right side; the
     // left mirrors it): a trigger tab with a rounded top, a slanted LM/RM key, angular paddles.
+    /// The trigger row sits 24 points higher and the back row 26 points higher than the shapes
+    /// below are drawn, leaving even gaps above and below the body.
+    private static let up = CGAffineTransform(translationX: 0, y: -24), back = CGAffineTransform(translationX: 0, y: -26)
+
     static let rt: Path = {
         var p = Path()
         p.move(to: CGPoint(x: 352, y: 56))
@@ -345,16 +352,16 @@ enum ControllerLayout {
         p.addQuadCurve(to: CGPoint(x: 410, y: 52), control: CGPoint(x: 408, y: 8))
         p.addQuadCurve(to: CGPoint(x: 404, y: 56), control: CGPoint(x: 411, y: 56))
         p.closeSubpath()
-        return p
+        return p.applying(up)
     }()
-    static let rm = rounded([CGPoint(x: 302, y: 20), CGPoint(x: 342, y: 20), CGPoint(x: 334, y: 50), CGPoint(x: 294, y: 50)], 5)
+    static let rm = rounded([CGPoint(x: 302, y: 20), CGPoint(x: 342, y: 20), CGPoint(x: 334, y: 50), CGPoint(x: 294, y: 50)], 5).applying(up)
     static let m1 = rounded([CGPoint(x: 370, y: 446), CGPoint(x: 424, y: 444), CGPoint(x: 460, y: 460),
-                             CGPoint(x: 446, y: 474), CGPoint(x: 360, y: 472)], 6)
+                             CGPoint(x: 446, y: 474), CGPoint(x: 360, y: 472)], 6).applying(back)
     static let m3 = rounded([CGPoint(x: 362, y: 480), CGPoint(x: 430, y: 482), CGPoint(x: 444, y: 488),
-                             CGPoint(x: 460, y: 498), CGPoint(x: 450, y: 512), CGPoint(x: 364, y: 512)], 6)
+                             CGPoint(x: 460, y: 498), CGPoint(x: 450, y: 512), CGPoint(x: 364, y: 512)], 6).applying(back)
     static let lt = mirrored(rt), lm = mirrored(rm), m2 = mirrored(m1), m4 = mirrored(m3)
-    static let turbo = CGRect(x: 196, y: 476, width: 50, height: 22)
-    static let fn = CGRect(x: 254, y: 476, width: 50, height: 22)
+    static let turbo = CGRect(x: 196, y: 450, width: 50, height: 22)
+    static let fn = CGRect(x: 254, y: 450, width: 50, height: 22)
 
     static let body = Path(polygon: ControllerArt.body)
     /// The parts of the bumpers that show above the body.
