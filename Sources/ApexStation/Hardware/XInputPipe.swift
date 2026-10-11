@@ -130,8 +130,13 @@ final class XInputPipe: @unchecked Sendable {
         lock.withLock {
             guard let output else { return }
             let packet: [UInt8] = [0x00, 0x08, 0x00, strong, weak, 0x00, 0x00, 0x00]
-            output.buffer.length = 0
-            output.buffer.append(packet, length: packet.count)
+            // The framework's buffers can't change length (that throws and kills the app), so
+            // the packet is copied into the one made for it.
+            guard output.buffer.length == packet.count else {
+                Log.usb.error("rumble buffer is \(output.buffer.length) bytes")
+                return
+            }
+            output.buffer.replaceBytes(in: NSRange(location: 0, length: packet.count), withBytes: packet)
             var sent = 0
             try? output.pipe.__sendIORequest(with: output.buffer, bytesTransferred: &sent, completionTimeout: 0.1)
         }

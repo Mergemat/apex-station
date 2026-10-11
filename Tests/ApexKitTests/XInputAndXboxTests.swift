@@ -116,11 +116,18 @@ private func report(_ hex: String) -> [UInt8] { hex.split(separator: " ").map { 
         #expect([UInt8](XboxWirelessReport.encode(s))[3...4] == [0xFF, 0xFF])
     }
 
-    @Test func buttonsUseXboxBluetoothUsageOrder() {
+    // Bit positions from SDL's HIDAPI_DriverXboxOneBluetooth_HandleButtons (firmware 5.x).
+    static let buttonBits: [(GamepadButtons, UInt16)] = [
+        (.a, 0x0001), (.b, 0x0002), (.x, 0x0008), (.y, 0x0010), (.leftBumper, 0x0040), (.rightBumper, 0x0080),
+        (.back, 0x0400), (.start, 0x0800), (.guide, 0x1000), (.leftStick, 0x2000), (.rightStick, 0x4000),
+    ]
+
+    @Test(arguments: buttonBits)
+    func buttonsSitWhereXboxFirmwarePutsThem(button: GamepadButtons, bit: UInt16) {
         var s = GamepadState()
-        s.buttons = [.a, .guide]
+        s.buttons = button
         let r = [UInt8](XboxWirelessReport.encode(s))
-        #expect(UInt16(r[14]) | UInt16(r[15]) << 8 == 0b100_0000_0001) // usage 1 and 11
+        #expect(UInt16(r[14]) | UInt16(r[15]) << 8 == bit)
     }
 
     static let hats: [(GamepadButtons, UInt8)] = [

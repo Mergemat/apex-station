@@ -37,9 +37,12 @@ public enum XboxWirelessReport {
         0x95, 0x01, 0x81, 0x02, 0xC0,
     ])
 
-    /// Button usages 1-11 in the order Xbox Bluetooth firmware reports them.
-    private static let buttonOrder: [GamepadButtons] = [
-        .a, .b, .x, .y, .leftBumper, .rightBumper, .back, .start, .leftStick, .rightStick, .guide,
+    /// Where Xbox Bluetooth firmware puts each button among its 15 bits; the gaps are unused.
+    /// Games read these positions, not the descriptor (SDL's HIDAPI driver, which Wine and Steam
+    /// use, among them).
+    private static let buttonBits: [(GamepadButtons, Int)] = [
+        (.a, 0), (.b, 1), (.x, 3), (.y, 4), (.leftBumper, 6), (.rightBumper, 7),
+        (.back, 10), (.start, 11), (.guide, 12), (.leftStick, 13), (.rightStick, 14),
     ]
 
     /// Input report 1 (17 bytes including the ID):
@@ -55,7 +58,7 @@ public enum XboxWirelessReport {
         put(&r, 11, trigger(s.rightTrigger))
         r[13] = hat(s.buttons)
         var bits: UInt16 = 0
-        for (i, b) in buttonOrder.enumerated() where s.buttons.contains(b) { bits |= 1 << i }
+        for (b, i) in buttonBits where s.buttons.contains(b) { bits |= 1 << i }
         put(&r, 14, bits)
         return Data(r)
     }
