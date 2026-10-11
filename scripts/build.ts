@@ -36,6 +36,7 @@ await Bun.write(`${app}/Contents/Info.plist`, `<?xml version="1.0" encoding="UTF
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSUIElement</key><true/>
 </dict></plist>
 `);
 
