@@ -53,9 +53,9 @@ don't see it twice, and shows it to them again when the app quits.
 
 macOS only lets Apple-signed apps create a virtual controller, and Apex Station isn't signed by
 Apple. The part that does it is a small helper inside the app, so the app itself opens on any
-Mac; the helper works on Macs with System Integrity Protection off or with AMFI relaxed
-(`sudo nvram boot-args="amfi_get_out_of_my_way=1"` and restart). Both loosen security for the
-whole Mac. Without it, Settings says so, and these still work:
+Mac; the helper needs AMFI relaxed (`sudo nvram boot-args="amfi_get_out_of_my_way=1"` and
+restart; on Apple Silicon this also needs System Integrity Protection off). That loosens
+code-signing checks for the whole Mac. Without it, Settings says so, and these still work:
 
 - **Full controller:** Steam and games built on SDL 3.4 or later read the "Flydigi Apex 5"
   directly, with back paddles and gyro, but without the controller's own remaps.
