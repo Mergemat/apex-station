@@ -22,12 +22,15 @@ tell(.ready)
 let reader = Thread {
     var pending: [UInt8] = []
     while true {
-        let chunk = FileHandle.standardInput.availableData
-        if chunk.isEmpty { exit(0) }
-        pending += chunk
-        while pending.count >= PadLink.reportSize {
-            pad.send(report: Data(pending.prefix(PadLink.reportSize)))
-            pending.removeFirst(PadLink.reportSize)
+        // A bare Thread never drains its autorelease pool, so each read's 16 KB buffer would pile up.
+        autoreleasepool {
+            let chunk = FileHandle.standardInput.availableData
+            if chunk.isEmpty { exit(0) }
+            pending += chunk
+            while pending.count >= PadLink.reportSize {
+                pad.send(report: Data(pending.prefix(PadLink.reportSize)))
+                pending.removeFirst(PadLink.reportSize)
+            }
         }
     }
 }
