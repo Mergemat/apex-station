@@ -1,0 +1,50 @@
+# release-please keeps a release PR open with the next version and changelog. Merging it tags
+# the release; the build job then attaches the universal app zip to it.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release to build and upload the app for, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+
+  build:
+    needs: release-please
+    if: always() && (needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: macos-26
+    env:
+      TAG: ${{ needs.release-please.outputs.tag || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: oven-sh/setup-bun@v2
+      - name: Check VERSION matches the tag
+        run: test "v$(cat VERSION)" = "$TAG"
+      - run: bun run test
+      - run: bun run release
+      - name: Upload to the release
+        working-directory: build
+        run: |
+          zip="Apex-Station-${TAG#v}.zip"
+          shasum -a 256 "$zip" > "$zip.sha256"
+          gh release upload "$TAG" "$zip" "$zip.sha256" --clobber
