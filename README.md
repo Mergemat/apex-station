@@ -100,7 +100,6 @@ with Space Station's Windows installer (needs `brew install innoextract`) and th
 
 `Sources/ApexKit` holds the controller protocol: profile, lighting, macro and settings formats.
 It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` is the app.
-`tools/` has the command-line probes used to work out the protocol.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
 

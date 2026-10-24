@@ -25,15 +25,13 @@ log stream --predicate 'subsystem == "dev.bomarov.ApexStation"'
 - `Sources/ApexStation`: the app. `Hardware/` talks to the controller, `Views/` is SwiftUI.
 - `Sources/ApexPad`: the helper that publishes the virtual Xbox controller. It's a separate
   binary because it needs an entitlement macOS only honours for signed code or with AMFI relaxed.
-- `tools/`: the probes used to work out the protocol. Each file says how to build and run it.
 - `Tests/ApexKitTests/Fixtures`: bytes read from a real Apex 5.
 
 ## Protocol changes
 
 Decode from real bytes. If you work out a new field, capture what the controller sends or
-stores (`tools/fdprobe.c`, `tools/reportlog.c` and `tools/profiletool.swift` help) and add the
-capture as a fixture, with a test that reads it and checks what Space Station shows for the
-same setting. That keeps the tests honest against the hardware, not just against the code.
+stores and add the capture as a fixture, with a test that reads it and checks what Space
+Station shows for the same setting. That keeps the tests honest against the hardware, not just against the code.
 
 The app only sends commands Space Station sends, and never writes firmware. Keep it that way:
 if a change needs a command Space Station doesn't use, open an issue first.
