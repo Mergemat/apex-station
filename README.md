@@ -2,6 +2,10 @@
 
 # Apex Station
 
+[![CI](https://github.com/Mergemat/apex-station/actions/workflows/ci.yml/badge.svg)](https://github.com/Mergemat/apex-station/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Mergemat/apex-station)](https://github.com/Mergemat/apex-station/releases/latest)
+[![MIT licence](https://img.shields.io/github/license/Mergemat/apex-station)](LICENSE)
+
 A free, open-source Mac app for the **Flydigi Apex 5**. It does what Flydigi's Space Station does
 on Windows: remap every button, set up the back paddles, macros, sticks, triggers, vibration,
 gyro and lighting, and save it all to the controller.
@@ -64,7 +68,7 @@ code-signing checks for the whole Mac. Without it, Settings says so, and these s
 
 ## Install
 
-1. Download `Apex-Station-x.y.z.zip` from [Releases](../../releases), unzip it, and move
+1. Download `Apex-Station-x.y.z.zip` from the [latest release](https://github.com/Mergemat/apex-station/releases/latest), unzip it, and move
    **Apex Station** to Applications.
 2. The app isn't notarised by Apple, so macOS blocks it the first time. Open it once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway**. Or run this in Terminal:
@@ -97,6 +101,8 @@ with Space Station's Windows installer (needs `brew install innoextract`) and th
 `Sources/ApexKit` holds the controller protocol: profile, lighting, macro and settings formats.
 It has no UI and no hardware access, so it can be reused. `Sources/ApexStation` is the app.
 `tools/` has the command-line probes used to work out the protocol.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
 
 ## Safety
 

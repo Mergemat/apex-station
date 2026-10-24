@@ -1,0 +1,58 @@
+name: Bug report
+description: Something on the controller or in the app doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Apex Station version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 26.1, M3 MacBook Air"
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How the controller is connected
+      options:
+        - Cable, PC mode
+        - Flydigi 2.4 GHz receiver
+        - PC Bluetooth
+        - Cable, Switch mode
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Controller firmware
+      description: Shown in Settings when the controller is on the cable or receiver.
+  - type: dropdown
+    id: helper
+    attributes:
+      label: Xbox controller for games
+      description: Only matters if the bug is about games seeing the controller.
+      options:
+        - Not relevant
+        - "On, with AMFI relaxed"
+        - Off or unavailable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Run this in Terminal, reproduce the problem, and paste what it prints:
+        `log stream --predicate 'subsystem == "dev.bomarov.ApexStation"'`
+      render: text

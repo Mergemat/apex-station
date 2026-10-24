@@ -1,0 +1,11 @@
+name: Feature request
+description: Something Space Station does that Apex Station doesn't, or an idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you'd like
+      description: If Space Station on Windows already does it, say where it lives there.
+    validations:
+      required: true
