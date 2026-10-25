@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://github.com/Mergemat/apex-station/actions/workflows/ci.yml"><img src="https://github.com/Mergemat/apex-station/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/macOS-15%2B-lightgrey?logo=apple" alt="macOS 15 or later">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Mergemat/apex-station" alt="MIT licence"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Mergemat/apex-station" alt="GPL-3.0 licence"></a>
 </p>
 
 <p align="center"><img src="docs/screenshot.png" width="900" alt="Apex Station with the Apex 5 connected"></p>
@@ -136,4 +136,4 @@ and keeps a backup in `~/Library/Application Support/Apex Station/Backups`.
 
 ## Licence
 
-[MIT](LICENSE). Not affiliated with Flydigi.
+[GPL-3.0-or-later](LICENSE). Not affiliated with Flydigi.
